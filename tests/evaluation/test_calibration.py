@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from churn_mlops.evaluation.calibration import reliability_diagram
+from mlkit.evaluation.calibration import reliability_diagram
 
 
 @pytest.mark.unit

@@ -1,0 +1,884 @@
+"""Load prediction data, calculate monitoring metrics, and write reports."""
+
+import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
+from functools import reduce
+from pathlib import Path
+from typing import Any
+
+import mlflow
+import nannyml as nml
+import pandas as pd
+from sklearn.metrics import precision_score, recall_score, roc_auc_score
+
+from mlkit.config import RuntimeSettings
+from mlkit.data import normalize_strings, read_jsonl_log, validate_data
+from mlkit.use_cases import UseCase
+
+logger = logging.getLogger(__name__)
+
+PRED_PROBA_COLUMN = "predicted_probability"
+PRED_CLASS_COLUMN = "predicted_class"
+PREDICTION_COLUMNS = [PRED_PROBA_COLUMN, PRED_CLASS_COLUMN]
+PERIOD_COLUMN = "period"
+MODEL_VERSION_COLUMN = "model_version"
+
+
+def _aggregation_columns(time_column: str) -> list[str]:
+    return [PERIOD_COLUMN, MODEL_VERSION_COLUMN, time_column]
+
+
+@dataclass(frozen=True)
+class MonitoringReport:
+    """Monitoring summary and detailed NannyML results."""
+
+    summary: pd.DataFrame
+    summary_path: Path | None = None
+
+
+def _read_scored_csv(
+    path: Path,
+) -> pd.DataFrame:
+    """Read a scored CSV file and normalize its column names.
+
+    Args:
+        path: Path to the scored CSV to load.
+
+    Returns:
+        A pandas DataFrame containing the CSV contents with normalized column
+        names.
+
+    Raises:
+        FileNotFoundError: If the CSV file does not exist.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"Input CSV file does not exist: {path}")
+
+    df = pd.read_csv(path)
+    df.columns = normalize_strings(df.columns)
+    return df
+
+
+def _event_log_to_df(path: Path | None, event: str, use_case: UseCase) -> pd.DataFrame:
+    """Load a JSONL event log and validate essential columns.
+
+    Args:
+        path: Path to the JSONL log file.
+        event: Expected event name for all records in the log, such as
+            "prediction" or "prediction_error".
+        use_case: Contract defining the timestamp field in the event records.
+
+    Returns:
+        A DataFrame with normalized event data, including a UTC timestamp
+        converted to a naive datetime and numeric latency values.
+
+    Raises:
+        ValueError: If the log file is missing, contains the wrong event type,
+            or omits required fields.
+    """
+    if path is None:
+        if event == "prediction_error":
+            logger.warning("No %s log supplied; treating as empty.", event)
+            return pd.DataFrame()
+        raise ValueError(f"{event} log path is required.")
+
+    if event == "prediction" and not path.exists():
+        raise ValueError(f"{event} log path '{path}' does not exist.")
+
+    df = read_jsonl_log(jsonl_path=path)
+
+    if df.empty:
+        logger.warning(f"{event} log '{path}' does not contain any (valid) records.")
+        return df
+    else:
+        all_records_prediction_events = (df["event"] == event).all()
+        if not all_records_prediction_events:
+            raise ValueError(f"Log '{path}' contains events other than {event}.")
+
+    time_column = use_case.time_column
+    required = {time_column, MODEL_VERSION_COLUMN, "latency_ms"}
+    missing = required.difference(df.columns)
+    if missing:
+        raise ValueError(
+            f"{event} event is missing columns: {', '.join(sorted(missing))}."
+        )
+
+    df[time_column] = pd.to_datetime(
+        df[time_column],
+        utc=True,
+        errors="raise",
+    ).dt.tz_localize(None)
+    df["latency_ms"] = pd.to_numeric(df["latency_ms"], errors="coerce")
+    return df
+
+
+def _prepare_validated_df(
+    df: pd.DataFrame,
+    name: str,
+    source: str,
+    use_case: UseCase,
+    require_predictions: bool = True,
+    require_target: bool = False,
+    require_features: bool = False,
+) -> pd.DataFrame:
+    """Normalize and validate a monitoring DataFrame for a single cohort.
+
+    Args:
+        df: Input DataFrame to sanitize and validate.
+        name: Label used in logging messages to differentiate inputs and
+            function runs.
+        source: Source label for the cohort, such as "batch" or "api".
+        use_case: Input, target, and timestamp contract to validate.
+        require_predictions: Whether prediction columns must exist and satisfy
+            probability/class constraints.
+        require_target: Whether the target column is required and must contain
+            both classes.
+        require_features: Whether feature columns must be present and validated.
+
+    Returns:
+        The validated DataFrame with standardized source, period, timestamp, and
+        model version columns.
+
+    Raises:
+        ValueError: If required inputs, labels, or model features are missing or
+            invalid.
+    """
+    df.columns = normalize_strings(df.columns)
+
+    df.insert(0, "source", source)
+    df.insert(1, PERIOD_COLUMN, name)
+
+    if require_features:
+        missing_features = set(use_case.feature_columns).difference(set(df.columns))
+        if missing_features:
+            raise ValueError(
+                f"{name} data is missing model input / feature columns: "
+                f"{', '.join(sorted(missing_features))}."
+            )
+        _ = validate_data(df, use_case)
+
+    time_column = use_case.time_column
+    required = set(_aggregation_columns(time_column=time_column))
+    if require_predictions:
+        required.update(PREDICTION_COLUMNS)
+    if require_target:
+        required.add(use_case.target_column)
+    missing = required.difference(set(df.columns))
+    if missing:
+        raise ValueError(
+            f"{name} data is missing required columns: {', '.join(sorted(missing))}."
+        )
+
+    if require_predictions:
+        df[PRED_PROBA_COLUMN] = pd.to_numeric(df[PRED_PROBA_COLUMN], errors="raise")
+        if not df[PRED_PROBA_COLUMN].between(0, 1).all():
+            raise ValueError(f"{name} data contains probabilities outside [0, 1].")
+        df[PRED_CLASS_COLUMN] = pd.to_numeric(
+            df[PRED_CLASS_COLUMN], errors="raise"
+        ).astype(int)
+        if not df[PRED_CLASS_COLUMN].isin([0, 1]).all():
+            raise ValueError(
+                f"{name} data contains predicted classes outside {{0, 1}}."
+            )
+
+    if require_target and df[use_case.target_column].isna().any():
+        raise ValueError(
+            f"{name} data must contain a target label for every row / record."
+        )
+    if require_target and df[use_case.target_column].nunique() < 2:
+        raise ValueError(
+            f"{name} data must contain both target classes for binary classification."
+        )
+
+    df[time_column] = (
+        pd.to_datetime(df[time_column], errors="raise")
+        .dt.to_period("M")
+        .dt.to_timestamp()
+    )
+
+    df[MODEL_VERSION_COLUMN] = df[MODEL_VERSION_COLUMN].astype(int)
+
+    return df
+
+
+def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten nested column labels from a NannyML result into plain strings.
+
+    Args:
+        df: DataFrame whose columns may be a pandas MultiIndex.
+
+    Returns:
+        A copy of the DataFrame with flat column names.
+    """
+    flattened = df.copy()
+    if isinstance(flattened.columns, pd.MultiIndex):
+        flattened.columns = [
+            "__".join(str(part) for part in column if str(part))
+            for column in flattened.columns
+        ]
+    else:
+        flattened.columns = [str(column) for column in flattened.columns]
+    return flattened
+
+
+def _extract_columns(df: pd.DataFrame, name_set: set) -> list:
+    """Return columns whose final segment matches a target name set.
+
+    Args:
+        df: DataFrame with flattened column names.
+        name_set: Set of expected suffix names to match.
+
+    Returns:
+        A list of column names whose last suffix is contained in ``name_set``.
+    """
+    return [column for column in df.columns if column.split("__")[-1] in name_set]
+
+
+def _drift_alert_summary(
+    result: Any, model_version: int, calculator_name: str, time_column: str
+) -> pd.DataFrame:
+    """Summarize alert counts for a drift calculator result.
+
+    Args:
+        result: NannyML result object containing drift alerts.
+        model_version: Model version ID used to label the output rows.
+        calculator_name: Prefix used for naming the alert metric column.
+
+    Returns:
+        A DataFrame with period, model version, timestamp, and alert count per
+        monitored chunk.
+
+    Raises:
+        KeyError: If the result lacks period, date, or alert columns.
+    """
+    raw = _flatten_columns(result.to_df())
+
+    period_columns = _extract_columns(df=raw, name_set={"period"})
+    date_columns = _extract_columns(df=raw, name_set={"start_date", "key"})
+    alert_columns = _extract_columns(df=raw, name_set={"alert"})
+
+    if not period_columns:
+        raise KeyError(f"'period' not in {calculator_name} results.")
+    if not date_columns:
+        raise KeyError(
+            f"Date column could not be identified from {calculator_name} results."
+        )
+    if not alert_columns:
+        raise KeyError(f"No 'alert' columns in {calculator_name} results.")
+
+    dates = pd.to_datetime(raw[date_columns[0]], errors="coerce")
+    alerts = raw[alert_columns].fillna(False).astype(bool).sum(axis=1)
+
+    return pd.DataFrame(
+        {
+            PERIOD_COLUMN: raw[period_columns[0]],
+            MODEL_VERSION_COLUMN: model_version,
+            time_column: dates,
+            f"{calculator_name}_alert_count": alerts,
+        }
+    )
+
+
+def _cbpe_summary(
+    result: Any, model_version: int, calculator_name: str, time_column: str
+) -> pd.DataFrame:
+    """Convert a CBPE result into a summary DataFrame covering metrics included
+    during CBPE run.
+
+    Args:
+        result: NannyML CBPE result object to summarize.
+        model_version: Model version ID mapped to the summary rows.
+        calculator_name: Prefix used for the generated metric columns.
+
+    Returns:
+        A DataFrame that includes period, model version, timestamp, and CBPE metric
+        values for each time chunk.
+
+    Raises:
+        KeyError: If period, date, or value columns are not present.
+    """
+    raw = _flatten_columns(result.to_df())
+
+    period_columns = _extract_columns(df=raw, name_set={"period"})
+    date_columns = _extract_columns(df=raw, name_set={"start_date", "key"})
+    value_columns = _extract_columns(df=raw, name_set={"value"})
+
+    if not period_columns:
+        raise KeyError(f"'period' not in {calculator_name} results.")
+    if not date_columns:
+        raise KeyError(
+            f"Date column could not be identified from {calculator_name} results."
+        )
+    if not value_columns:
+        raise KeyError(f"No estimated metric values in {calculator_name} results.")
+
+    dates = pd.to_datetime(raw[date_columns[0]], errors="coerce")
+
+    summary = pd.DataFrame(
+        {
+            PERIOD_COLUMN: raw[period_columns[0]],
+            MODEL_VERSION_COLUMN: model_version,
+            time_column: dates,
+        }
+    )
+    for col in value_columns:
+        col_name = calculator_name + "_" + col.split("__")[0]
+        summary[col_name] = raw[col]
+    return summary
+
+
+def _base_summary(
+    reference: pd.DataFrame,
+    analysis: pd.DataFrame,
+    time_column: str,
+) -> pd.DataFrame:
+    """Aggregate the main prediction metrics for both reference and analysis cohorts.
+
+    Args:
+        reference: Reference cohort DataFrame used as the historical baseline.
+        analysis: Analysis cohort DataFrame covering monitored period.
+
+    Returns:
+        A grouped DataFrame with prediction count, average predicted probability,
+        and positive-rate metrics by source and period.
+    """
+    combined = pd.concat([reference, analysis], ignore_index=True)
+    aggregation_columns = _aggregation_columns(time_column=time_column)
+    grouped = combined.groupby(["source", *aggregation_columns], dropna=False)
+    summary = grouped.agg(
+        prediction_count=(PRED_CLASS_COLUMN, "size"),
+        avg_predicted_probability=(PRED_PROBA_COLUMN, "mean"),
+        predicted_positive_rate=(PRED_CLASS_COLUMN, "mean"),
+    ).reset_index()
+    return summary
+
+
+def _actual_metrics(
+    reference: pd.DataFrame,
+    analysis: pd.DataFrame,
+    target_column: str,
+    time_column: str,
+) -> pd.DataFrame:
+    """Calculate realized classification metrics from labeled input data.
+
+    Args:
+        reference: Reference cohort DataFrame used as the historical baseline.
+        analysis: Analysis cohort DataFrame containing labeled outputs for the
+            monitored period.
+
+    Returns:
+        DataFrame with observed positive rate, realized precision, recall, and
+        ROC AUC for each period and model version. Returns an empty DataFrame when
+        no target column is available.
+    """
+
+    df = pd.concat([reference, analysis], ignore_index=True)
+    aggregation_columns = _aggregation_columns(time_column=time_column)
+
+    if target_column not in df.columns:
+        return pd.DataFrame(columns=aggregation_columns)
+
+    rows: list[dict[str, Any]] = []
+    grouped = df.groupby(aggregation_columns, dropna=False)
+    for (period, model_version, month), chunk in grouped:
+        chunk = chunk.dropna(subset=[target_column])
+        if chunk.empty:
+            continue
+        target = chunk[target_column].astype(int)
+        predicted = chunk[PRED_CLASS_COLUMN].astype(int)
+        probability = chunk[PRED_PROBA_COLUMN].astype(float)
+        rows.append(
+            {
+                PERIOD_COLUMN: period,
+                MODEL_VERSION_COLUMN: model_version,
+                time_column: month,
+                "observed_positive_rate": float(target.mean()),
+                "realized_precision": float(
+                    precision_score(target, predicted, zero_division=0)
+                ),
+                "realized_recall": float(
+                    recall_score(target, predicted, zero_division=0)
+                ),
+                "realized_roc_auc": (
+                    float(roc_auc_score(target, probability))
+                    if target.nunique() == 2
+                    else float("nan")
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _calculate_version_drift(
+    reference: pd.DataFrame,
+    analysis: pd.DataFrame,
+    errors: pd.DataFrame,
+    model_version: int,
+    use_case: UseCase,
+) -> pd.DataFrame:
+    """Run drift monitoring for one model version and merge its alerts.
+
+    Args:
+        reference: Reference cohort for the model version.
+        analysis: Scored analysis cohort for the model version.
+        errors: Prediction error records for the same model version.
+        model_version: Model version used to tag the result rows.
+
+    Returns:
+        A merged DataFrame containing Confidence-Based Performance Estimation
+        metrics and drift alert counts across reconstruction and univariate
+        drift calculations for the model version.
+    """
+
+    monitoring = pd.concat([analysis, errors], ignore_index=True)
+    time_column = use_case.time_column
+    aggregation_columns = _aggregation_columns(time_column=time_column)
+
+    continuous_features = (
+        monitoring[list(use_case.feature_columns)]
+        .select_dtypes(include=["number"])
+        .columns.tolist()
+    )
+
+    categorical_features = (
+        monitoring[list(use_case.feature_columns)]
+        .select_dtypes(include=["category", "object", "str", "string"])
+        .columns.tolist()
+    )
+
+    alerts = []
+
+    if use_case.target_column in reference.columns:
+        cbpe = (
+            nml.CBPE(
+                problem_type="classification_binary",
+                y_pred_proba=PRED_PROBA_COLUMN,
+                y_pred=PRED_CLASS_COLUMN,
+                y_true=use_case.target_column,
+                timestamp_column_name=time_column,
+                metrics=["precision", "recall", "roc_auc"],
+                chunk_period="M",
+            )
+            .fit(reference)
+            .estimate(analysis)
+        )
+        alerts.append(
+            _cbpe_summary(
+                result=cbpe,
+                model_version=model_version,
+                calculator_name="cbpe",
+                time_column=time_column,
+            )
+        )
+
+    reconstruction = (
+        nml.DataReconstructionDriftCalculator(
+            column_names=list(use_case.feature_columns),
+            timestamp_column_name=time_column,
+            chunk_period="M",
+        )
+        .fit(reference)
+        .calculate(monitoring)
+    )
+    alerts.append(
+        _drift_alert_summary(
+            result=reconstruction,
+            model_version=model_version,
+            calculator_name="reconstruction_drift",
+            time_column=time_column,
+        )
+    )
+
+    univariate = (
+        nml.UnivariateDriftCalculator(
+            column_names=list(use_case.feature_columns),
+            treat_as_numerical=continuous_features,
+            treat_as_categorical=categorical_features,
+            timestamp_column_name=time_column,
+            chunk_period="M",
+            continuous_methods=["jensen_shannon"],
+            categorical_methods=["jensen_shannon"],
+        )
+        .fit(reference)
+        .calculate(monitoring)
+    )
+    alerts.append(
+        _drift_alert_summary(
+            result=univariate,
+            model_version=model_version,
+            calculator_name="univariate_drift",
+            time_column=time_column,
+        )
+    )
+
+    alerts_combined = reduce(
+        lambda left, right: pd.merge(
+            left,
+            right,
+            on=aggregation_columns,
+            how="outer",
+        ),
+        alerts,
+    )
+
+    return alerts_combined
+
+
+def _operational_summary(
+    analysis: pd.DataFrame,
+    errors: pd.DataFrame,
+    time_column: str,
+) -> pd.DataFrame:
+    """Summarize request volume and latency for API monitoring data.
+
+    Args:
+        analysis: Successful prediction records for the monitored period.
+        errors: Failed prediction records for the monitored period.
+
+    Returns:
+        A DataFrame containing request counts, latency percentiles, and error rate
+        for each period, model version, and month.
+    """
+
+    aggregation_columns = _aggregation_columns(time_column=time_column)
+    analysis_grouped = analysis.groupby(aggregation_columns, dropna=False)
+    success_summary = analysis_grouped.agg(
+        api_success_count=("latency_ms", "size"),
+        prediction_latency_p50_ms=("latency_ms", "median"),
+        prediction_latency_p95_ms=("latency_ms", lambda values: values.quantile(0.95)),
+    ).reset_index()
+
+    errors_grouped = errors.groupby(aggregation_columns, dropna=False)
+    error_summary = errors_grouped.agg(
+        api_error_count=("latency_ms", "size"),
+        api_error_latency_p50_ms=("latency_ms", "median"),
+        api_error_latency_p95_ms=("latency_ms", lambda values: values.quantile(0.95)),
+    ).reset_index()
+
+    api_totals = success_summary.merge(
+        error_summary, on=aggregation_columns, how="outer"
+    )
+    api_totals["api_success_count"] = (
+        api_totals["api_success_count"].fillna(0).astype(int)
+    )
+    api_totals["api_error_count"] = api_totals["api_error_count"].fillna(0).astype(int)
+    api_totals["api_request_count"] = (
+        api_totals["api_success_count"] + api_totals["api_error_count"]
+    )
+    api_totals["api_error_rate"] = api_totals["api_error_count"] / api_totals[
+        "api_request_count"
+    ].replace(0, pd.NA)
+    return api_totals.drop(columns=["api_success_count", "api_error_count"])
+
+
+def build_monitoring_report(
+    reference: pd.DataFrame,
+    analysis: pd.DataFrame,
+    *,
+    use_case: UseCase,
+    source_reference: str = "batch",
+    source_analysis: str = "api",
+    drift: bool = True,
+    errors: pd.DataFrame | None = None,
+    output_dir: Path | None = None,
+    model_version: int | None = None,
+) -> MonitoringReport:
+    """Build a monitoring report across prediction, performance, and drift KPIs.
+
+    Args:
+        reference: Labeled reference cohort containing historical predictions.
+        analysis: Scored analysis cohort for the monitored inference period.
+        use_case: Explicit input, target, and timestamp contract.
+        source_reference: Source of the reference data, either "batch" or "api".
+        source_analysis: Source of the analysis data, either "batch" or "api".
+        drift: Whether to calculate drift-based alert metrics.
+        errors: Optional API prediction error events to include in operational and
+            drift monitoring.
+        output_dir: Optional directory where the summary CSV should be written.
+        model_version: Optional exact model version to include in the report.
+
+    Returns:
+        A MonitoringReport summarizing prediction, observed, operational, and drift
+        KPIs for the overlapping model versions and covering reference and analysis periods.
+
+    Raises:
+        ValueError: If source names are invalid, required columns are missing, or
+            no common model versions exist between reference and analysis data.
+    """
+
+    if source_reference not in {"batch", "api"}:
+        raise ValueError("``source_reference`` must be either 'batch' or 'api'.")
+    if source_analysis not in {"batch", "api"}:
+        raise ValueError("``source_analysis`` must be either 'batch' or 'api'.")
+
+    time_column = use_case.time_column
+    aggregation_columns = _aggregation_columns(time_column=time_column)
+
+    reference_df = _prepare_validated_df(
+        df=reference.copy(),
+        name="reference",
+        source=source_reference,
+        use_case=use_case,
+        require_predictions=True,
+        require_target=True,
+        require_features=drift,
+    )
+    analysis_df = _prepare_validated_df(
+        df=analysis.copy(),
+        name="analysis",
+        source=source_analysis,
+        use_case=use_case,
+        require_predictions=True,
+        require_target=False,
+        require_features=drift,
+    )
+    if errors is None or errors.empty:
+        errors_init = pd.DataFrame(columns=analysis_df.columns).drop(
+            columns=[PERIOD_COLUMN, "source"]
+        )
+    else:
+        errors_init = errors.copy()
+    errors_df = _prepare_validated_df(
+        df=errors_init,
+        name="analysis",
+        source=source_analysis,
+        use_case=use_case,
+        require_predictions=False,
+        require_target=False,
+        require_features=drift,
+    )
+
+    if model_version is not None:
+        reference_df = reference_df.loc[
+            reference_df[MODEL_VERSION_COLUMN] == model_version
+        ]
+        analysis_df = analysis_df.loc[
+            analysis_df[MODEL_VERSION_COLUMN] == model_version
+        ]
+        errors_df = errors_df.loc[errors_df[MODEL_VERSION_COLUMN] == model_version]
+
+    # Model monitoring reports can be calculated for multiple model versions simultaneously
+    # For that purpose, model versions need to be present in both reference and analysis DFs
+    unique_versions_reference = set(reference_df[MODEL_VERSION_COLUMN].unique())
+    unique_versions_analysis = set(analysis_df[MODEL_VERSION_COLUMN].unique())
+
+    versions_common = sorted(
+        unique_versions_reference.intersection(unique_versions_analysis)
+    )
+    versions_only_reference = sorted(
+        unique_versions_reference.difference(unique_versions_analysis)
+    )
+    versions_only_analysis = sorted(
+        unique_versions_analysis.difference(unique_versions_reference)
+    )
+
+    if not versions_common:
+        raise ValueError(
+            "Reference and analysis DFs do not cover common model versions."
+        )
+    if versions_common:
+        logger.info(
+            "Report can be built for model versions %s,"
+            "which are present in both, reference and analysis data.",
+            versions_common,
+        )
+    if versions_only_reference:
+        for version in versions_only_reference:
+            logger.warning("No analysis cohort for model version %s.", version)
+    if versions_only_analysis:
+        for version in versions_only_analysis:
+            logger.warning("No reference cohort for model version %s.", version)
+
+    reference_df = reference_df.loc[
+        reference_df[MODEL_VERSION_COLUMN].isin(versions_common), :
+    ]
+    analysis_df = analysis_df.loc[
+        analysis_df[MODEL_VERSION_COLUMN].isin(versions_common), :
+    ]
+
+    # reference and analysis periods should not overlapp
+    ref_max = reference_df[time_column].max()
+    ana_min = min(analysis_df[time_column].min(), errors_df[time_column].min())
+    if ana_min <= ref_max:
+        logger.warning(
+            f"Reference and analysis periods overlap: {ref_max=} >= {ana_min=}"
+        )
+        logger.warning("Due to overlapp, drift analysis will not be executed.")
+        drift = False
+
+    # To be able to compare monitoring KPIs across analysis and reference period,
+    # they are calculated for both, if applicable
+    summary = _base_summary(
+        reference=reference_df,
+        analysis=analysis_df,
+        time_column=time_column,
+    )
+
+    actual = _actual_metrics(
+        reference=reference_df,
+        analysis=analysis_df,
+        target_column=use_case.target_column,
+        time_column=time_column,
+    )
+    if not actual.empty:
+        summary = summary.merge(actual, on=aggregation_columns, how="left")
+
+    # Drift analysis separated strictly by model verison and executed only
+    # if reference and analysis time periods have no overlapp.
+    # Data from failed prediction attempts should also be considered.
+    alert_dfs: list[pd.DataFrame] = []
+    if drift:
+        for version in versions_common:
+            version_reference = reference_df.loc[
+                reference_df[MODEL_VERSION_COLUMN] == version
+            ]
+            version_analysis = analysis_df.loc[
+                analysis_df[MODEL_VERSION_COLUMN] == version
+            ]
+            version_errors = errors_df.loc[errors_df[MODEL_VERSION_COLUMN] == version]
+            version_alerts = _calculate_version_drift(
+                reference=version_reference,
+                analysis=version_analysis,
+                errors=version_errors,
+                model_version=version,
+                use_case=use_case,
+            )
+            alert_dfs.append(version_alerts)
+
+    # Alerts for different model versions need to be combined and merged
+    if alert_dfs:
+        alerts = pd.concat(alert_dfs, ignore_index=True, sort=False)
+        summary = summary.merge(alerts, on=aggregation_columns, how="left")
+
+    # Operational KPIs are only available for API based predictions
+    if source_analysis == "api":
+        operational = _operational_summary(
+            analysis=analysis_df,
+            errors=errors_df,
+            time_column=time_column,
+        )
+        summary = summary.merge(operational, on=aggregation_columns, how="outer")
+
+    summary = summary.sort_values([MODEL_VERSION_COLUMN, time_column]).reset_index(
+        drop=True
+    )
+
+    numeric_columns = summary.select_dtypes(include="number").columns
+    summary[numeric_columns] = summary[numeric_columns].round(4)
+
+    summary_path = None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        summary_path = output_dir / f"monitoring_summary_{source_analysis}.csv"
+        summary.to_csv(summary_path, index=False, float_format="%.4f")
+        logger.info("Monitoring summary written to '%s'.", summary_path)
+
+    return MonitoringReport(summary, summary_path)
+
+
+def run_monitoring(
+    reference_csv: Path,
+    *,
+    use_case: UseCase,
+    analysis_csv: Path | None = None,
+    prediction_log: Path | None = None,
+    error_log: Path | None = None,
+    output_dir: Path | None = None,
+    model_version: int | None = None,
+) -> MonitoringReport:
+    """Load monitoring inputs and generate a report for batch or API predictions.
+
+    Args:
+        reference_csv: Path to the labeled reference CSV that defines the baseline
+            period for monitoring.
+        use_case: Explicit input, target, and timestamp contract.
+        analysis_csv: Optional path to a scored batch analysis CSV. Mutually
+            exclusive with ``prediction_log``.
+        prediction_log: Optional path to an API prediction JSONL log. Mutually
+            exclusive with ``analysis_csv``.
+        error_log: Optional path to an API error JSONL log. Only valid together
+            with ``prediction_log``.
+        output_dir: Output directory for the monitoring summary CSV. Defaults to
+            the runtime settings output directory.
+        model_version: Optional exact model version to include in the report.
+
+    Returns:
+        A MonitoringReport summarizing the monitoring results for time periods
+        and model versions covered by the provided input data.
+
+    Raises:
+        ValueError: If exactly one of ``analysis_csv`` or ``prediction_log`` is
+            not provided, or if ``error_log`` is passed without a prediction log.
+    """
+    if (analysis_csv is None) == (prediction_log is None):
+        raise ValueError("Provide exactly one of analysis_csv or prediction_log.")
+    if error_log is not None and prediction_log is None:
+        raise ValueError("error_log can only be used with prediction_log.")
+
+    settings = RuntimeSettings()
+    report_dir = output_dir or settings.output_dir
+    reference = _read_scored_csv(reference_csv)
+    if analysis_csv is not None:
+        return build_monitoring_report(
+            reference=reference,
+            analysis=_read_scored_csv(analysis_csv),
+            use_case=use_case,
+            source_reference="batch",
+            source_analysis="batch",
+            output_dir=report_dir,
+            model_version=model_version,
+        )
+    else:
+        return build_monitoring_report(
+            reference=reference,
+            analysis=_event_log_to_df(
+                path=prediction_log,
+                event="prediction",
+                use_case=use_case,
+            ),
+            use_case=use_case,
+            source_reference="batch",
+            source_analysis="api",
+            errors=_event_log_to_df(
+                path=error_log,
+                event="prediction_error",
+                use_case=use_case,
+            ),
+            output_dir=report_dir,
+            model_version=model_version,
+        )
+
+
+def log_monitoring_run(
+    report: MonitoringReport,
+    *,
+    experiment_name: str,
+    run_name: str,
+    tags: Mapping[str, str],
+    tracking_uri: str | None = None,
+) -> None:
+    """Log a monitoring report artifact and aggregate summary metrics to MLflow.
+
+    Args:
+        report: Generated monitoring report.
+        experiment_name: MLflow experiment receiving the monitoring run.
+        run_name: Name identifying the monitored cohorts and model.
+        tags: Cohort, model, and source metadata for the run.
+        tracking_uri: Optional MLflow tracking URI.
+    """
+    from mlkit.tracking import setup_local_experiment
+
+    settings = RuntimeSettings()
+    resolved_tracking_uri = tracking_uri or settings.mlflow_tracking_uri
+    experiment_id = setup_local_experiment(
+        experiment_name=experiment_name,
+        tracking_uri=resolved_tracking_uri,
+    )
+    with mlflow.start_run(experiment_id=experiment_id, run_name=run_name):
+        mlflow.set_tags(dict(tags))
+        if report.summary_path is not None:
+            mlflow.log_artifact(
+                local_path=str(report.summary_path),
+                artifact_path="monitoring",
+            )

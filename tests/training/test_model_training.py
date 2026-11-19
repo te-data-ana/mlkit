@@ -8,10 +8,10 @@ import pytest
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 
-from churn_mlops.config.schemas import TrainingConfig
-from churn_mlops.evaluation import select_f1_threshold
-from churn_mlops.training import TrainingResult, model_training, train_model
-from churn_mlops.use_cases import get_use_case
+from mlkit.config.schemas import TrainingConfig
+from mlkit.evaluation import select_f1_threshold
+from mlkit.training import TrainingResult, model_training, train_model
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 

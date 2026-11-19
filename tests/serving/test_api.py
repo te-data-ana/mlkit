@@ -7,10 +7,10 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from churn_mlops.serving import api
-from churn_mlops.serving.model_loader import LoadedModel, load_model
-from churn_mlops.serving.prediction_logger import PredictionLogger
-from churn_mlops.use_cases import UseCase, get_use_case
+from mlkit.serving import api
+from mlkit.serving.model_loader import LoadedModel, load_model
+from mlkit.serving.prediction_logger import PredictionLogger
+from mlkit.use_cases import UseCase, get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 

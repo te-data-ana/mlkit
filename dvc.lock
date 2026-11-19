@@ -1,7 +1,7 @@
 schema: '2.0'
 stages:
   add_reference_dates:
-    cmd: uv run python -m churn_mlops.data.manipulation --use_case churn
+    cmd: uv run python -m mlkit.data.manipulation --use_case churn
       --input_csv customer_churn_dataset-training.csv --output_csv training.csv
       --start_date 2023-01-01 --end_date 2025-12-01
     deps:
@@ -14,17 +14,17 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: src/churn_mlops/config
+    - path: src/mlkit/config
       hash: md5
       md5: 2ab92d189f67efd2cba7868590cb8ee9.dir
       size: 35293
       nfiles: 15
-    - path: src/churn_mlops/data
+    - path: src/mlkit/data
       hash: md5
       md5: 562d2f0c0112a0e822d900c160f2ca5c.dir
       size: 97025
       nfiles: 25
-    - path: src/churn_mlops/use_cases
+    - path: src/mlkit/use_cases
       hash: md5
       md5: 9cf65caa10e7bc04f331b948ad0953e0.dir
       size: 25368
@@ -42,7 +42,7 @@ stages:
       md5: b3d704bdd954262ca30ab3aa2ce72057
       size: 28260531
   add_inference_reference_dates:
-    cmd: uv run python -m churn_mlops.data.manipulation --use_case churn
+    cmd: uv run python -m mlkit.data.manipulation --use_case churn
       --input_csv customer_churn_dataset-inference.csv --output_csv
       inference.csv --start_date 2026-01-01 --end_date 2026-06-01
     deps:
@@ -55,17 +55,17 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: src/churn_mlops/config
+    - path: src/mlkit/config
       hash: md5
       md5: 2ab92d189f67efd2cba7868590cb8ee9.dir
       size: 35293
       nfiles: 15
-    - path: src/churn_mlops/data
+    - path: src/mlkit/data
       hash: md5
       md5: 562d2f0c0112a0e822d900c160f2ca5c.dir
       size: 97025
       nfiles: 25
-    - path: src/churn_mlops/use_cases
+    - path: src/mlkit/use_cases
       hash: md5
       md5: 9cf65caa10e7bc04f331b948ad0953e0.dir
       size: 25368
@@ -83,8 +83,8 @@ stages:
       md5: e204a8d9fb187d458c71108e3f752033
       size: 4054722
   prepare_partitioned_data:
-    cmd: uv run churn-mlops prepare-data --use_case churn --input_csv
-      training.csv && uv run churn-mlops prepare-data --use_case churn
+    cmd: uv run mlkit prepare-data --use_case churn --input_csv
+      training.csv && uv run mlkit prepare-data --use_case churn
       --input_csv inference.csv
     deps:
     - path: data/raw/inference.csv
@@ -99,17 +99,17 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: src/churn_mlops/config
+    - path: src/mlkit/config
       hash: md5
       md5: 2ab92d189f67efd2cba7868590cb8ee9.dir
       size: 35293
       nfiles: 15
-    - path: src/churn_mlops/data
+    - path: src/mlkit/data
       hash: md5
       md5: 562d2f0c0112a0e822d900c160f2ca5c.dir
       size: 97025
       nfiles: 25
-    - path: src/churn_mlops/use_cases
+    - path: src/mlkit/use_cases
       hash: md5
       md5: 9cf65caa10e7bc04f331b948ad0953e0.dir
       size: 25368
@@ -128,7 +128,7 @@ stages:
       size: 9453558
       nfiles: 42
   create_oot_split:
-    cmd: uv run churn-mlops create-split --use_case churn --dataset_name
+    cmd: uv run mlkit create-split --use_case churn --dataset_name
       partitioned --start_date 2025-04-01 --split_date 2026-04-01 --end_date
       2026-06-30 --split_name oot-26Q2
     deps:
@@ -141,17 +141,17 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: src/churn_mlops/config
+    - path: src/mlkit/config
       hash: md5
       md5: 2ab92d189f67efd2cba7868590cb8ee9.dir
       size: 35293
       nfiles: 15
-    - path: src/churn_mlops/data
+    - path: src/mlkit/data
       hash: md5
       md5: 562d2f0c0112a0e822d900c160f2ca5c.dir
       size: 97025
       nfiles: 25
-    - path: src/churn_mlops/use_cases
+    - path: src/mlkit/use_cases
       hash: md5
       md5: 9cf65caa10e7bc04f331b948ad0953e0.dir
       size: 25368
@@ -182,7 +182,7 @@ stages:
       md5: d30618f93e7a30ef29f16f62841dbdd5
       size: 1966768
   train_model:
-    cmd: uv run churn-mlops train --use_case churn --config nb.yaml --split_name
+    cmd: uv run mlkit train --use_case churn --config nb.yaml --split_name
       oot-26Q2 --calibration_method isotonic --n_jobs 16 --tune-model true
       --register-model true --promote-model true
     deps:
@@ -202,7 +202,7 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: src/churn_mlops
+    - path: src/mlkit
       hash: md5
       md5: 973838efd01522ea5db8da72e717abc0.dir
       size: 743594
@@ -232,7 +232,7 @@ stages:
       size: 9003
       nfiles: 3
   batch_predict_oot:
-    cmd: uv run churn-mlops batch-predict --use_case churn --input_dataset
+    cmd: uv run mlkit batch-predict --use_case churn --input_dataset
       splits/oot-26Q2_test.parquet --output_dataset
       predictions/churn_nb_oot-26Q2 --model_manifest
       manifests/churn-nb-oot-26Q2.json
@@ -249,7 +249,7 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: src/churn_mlops
+    - path: src/mlkit
       hash: md5
       md5: 973838efd01522ea5db8da72e717abc0.dir
       size: 743594

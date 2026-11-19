@@ -4,12 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from churn_mlops.config.schemas import TrainingConfig
-from churn_mlops.tracking import (
+from mlkit.config.schemas import TrainingConfig
+from mlkit.tracking import (
     ModelCardBuilder,
     log_model_card,
 )
-from churn_mlops.tracking.manifest import TrainingManifest
+from mlkit.tracking.manifest import TrainingManifest
 
 
 @pytest.mark.unit
@@ -101,7 +101,7 @@ def test_build_renders_na_for_missing_champion_values(
 
 
 @pytest.mark.unit
-@patch("churn_mlops.tracking.model_card.mlflow.log_artifact")
+@patch("mlkit.tracking.model_card.mlflow.log_artifact")
 def test_log_model_card_calls_mlflow(
     mock_log_artifact: Any,
 ) -> None:

@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from churn_mlops.serving.model_loader import LoadedModel
-from churn_mlops.serving.predictor import PredictionResult, Predictor
-from churn_mlops.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.serving.model_loader import LoadedModel
+from mlkit.serving.predictor import PredictionResult, Predictor
+from mlkit.use_cases.churn.serving import ChurnInputFeatures
 
 
 @pytest.mark.unit

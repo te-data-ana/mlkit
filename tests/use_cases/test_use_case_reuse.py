@@ -8,13 +8,13 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from churn_mlops import batch_predict
-from churn_mlops.models import IdentityFeatureBuilder
-from churn_mlops.monitoring import core
-from churn_mlops.serving import api
-from churn_mlops.serving.model_loader import LoadedModel, ModelMetadata
-from churn_mlops.training import train_model
-from churn_mlops.use_cases import UseCase
+from mlkit import batch_predict
+from mlkit.models import IdentityFeatureBuilder
+from mlkit.monitoring import core
+from mlkit.serving import api
+from mlkit.serving.model_loader import LoadedModel, ModelMetadata
+from mlkit.training import train_model
+from mlkit.use_cases import UseCase
 
 
 class AlternateInput(BaseModel):

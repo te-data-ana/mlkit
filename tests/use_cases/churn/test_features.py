@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from churn_mlops.use_cases.churn.features import ChurnFeatureBuilder
+from mlkit.use_cases.churn.features import ChurnFeatureBuilder
 
 
 @pytest.mark.unit

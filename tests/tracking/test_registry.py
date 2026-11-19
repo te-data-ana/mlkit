@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pytest
 from mlflow.exceptions import MlflowException
 
-from churn_mlops.tracking.registry import ModelRegistry
+from mlkit.tracking.registry import ModelRegistry
 
 
 @pytest.mark.unit
@@ -15,7 +15,7 @@ def test_registry_registers_model_info_uri(
     registered_version = Mock()
     register_model = Mock(return_value=registered_version)
     monkeypatch.setattr(
-        "churn_mlops.tracking.registry.mlflow.register_model",
+        "mlkit.tracking.registry.mlflow.register_model",
         register_model,
     )
 
@@ -61,9 +61,7 @@ def test_registry_loads_an_exact_model_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     load_model = Mock(return_value=object())
-    monkeypatch.setattr(
-        "churn_mlops.tracking.registry.mlflow.sklearn.load_model", load_model
-    )
+    monkeypatch.setattr("mlkit.tracking.registry.mlflow.sklearn.load_model", load_model)
 
     registry.load_model_by_version(model_name="my_model", model_version=7)
 

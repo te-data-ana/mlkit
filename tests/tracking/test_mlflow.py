@@ -11,12 +11,12 @@ from mlflow import MlflowClient
 from mlflow.exceptions import MlflowException
 from sklearn.calibration import CalibratedClassifierCV
 
-import churn_mlops.tracking.mlflow as tracking
-from churn_mlops.config.schemas import TrainingConfig
-from churn_mlops.models import build_classifier_pipeline, create_model
-from churn_mlops.models.features import IdentityFeatureBuilder
-from churn_mlops.training import TrainingResult
-from churn_mlops.use_cases import UseCase, get_use_case
+import mlkit.tracking.mlflow as tracking
+from mlkit.config.schemas import TrainingConfig
+from mlkit.models import build_classifier_pipeline, create_model
+from mlkit.models.features import IdentityFeatureBuilder
+from mlkit.training import TrainingResult
+from mlkit.use_cases import UseCase, get_use_case
 
 
 @pytest.mark.unit

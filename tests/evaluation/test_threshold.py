@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from churn_mlops.evaluation.threshold import select_f1_threshold
+from mlkit.evaluation.threshold import select_f1_threshold
 
 
 @pytest.mark.unit

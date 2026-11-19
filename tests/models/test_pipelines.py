@@ -15,8 +15,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
-from churn_mlops.models import IdentityFeatureBuilder, build_classifier_pipeline
-from churn_mlops.models.pipelines import _requires_scaling
+from mlkit.models import IdentityFeatureBuilder, build_classifier_pipeline
+from mlkit.models.pipelines import _requires_scaling
 
 
 @pytest.mark.unit

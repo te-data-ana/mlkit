@@ -1,7 +1,7 @@
 schema: '2.0'
 stages:
   monitor:
-    cmd: uv run churn-mlops monitor --use_case churn --reference_dataset
+    cmd: uv run mlkit monitor --use_case churn --reference_dataset
       predictions/churn_lr_oot-26Q2 --analysis_dataset api_predictions
       --source_reference batch --source_analysis api --model_manifest
       manifests/churn-lr-oot-26Q2.json --output_dir
@@ -26,7 +26,7 @@ stages:
       hash: md5
       md5: d0bcdc29b18b1e0b586fe53403de267c
       size: 1798
-    - path: ../src/churn_mlops
+    - path: ../src/mlkit
       hash: md5
       md5: 973838efd01522ea5db8da72e717abc0.dir
       size: 743594

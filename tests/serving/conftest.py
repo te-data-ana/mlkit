@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from churn_mlops.serving import api
-from churn_mlops.serving.model_loader import LoadedModel, ModelMetadata
-from churn_mlops.serving.predictor import PredictionResult
-from churn_mlops.serving.schemas import (
+from mlkit.serving import api
+from mlkit.serving.model_loader import LoadedModel, ModelMetadata
+from mlkit.serving.predictor import PredictionResult
+from mlkit.serving.schemas import (
     PredictionErrorEvent,
     PredictionEvent,
 )
-from churn_mlops.use_cases import get_use_case
-from churn_mlops.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.use_cases import get_use_case
+from mlkit.use_cases.churn.serving import ChurnInputFeatures
 
 
 @pytest.fixture

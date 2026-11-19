@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from churn_mlops.data.storage import (
+from mlkit.data.storage import (
     _partition_filters,
     read_partitioned_dataset,
     write_partitioned_dataset,
@@ -14,7 +14,7 @@ from churn_mlops.data.storage import (
 @pytest.fixture
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
-        "churn_mlops.data.storage.RuntimeSettings",
+        "mlkit.data.storage.RuntimeSettings",
         lambda: SimpleNamespace(data_dir=tmp_path),
     )
     return tmp_path

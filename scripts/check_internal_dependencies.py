@@ -490,7 +490,7 @@ def write_dependency_visualizations(
 
 if __name__ == "__main__":
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
-    PACKAGE_PATH = PROJECT_ROOT / "src" / "churn_mlops"
+    PACKAGE_PATH = PROJECT_ROOT / "src" / "mlkit"
     OUTPUT_DIR = PROJECT_ROOT / "output"
 
     graph = extract_internal_imports(package_root=PACKAGE_PATH)

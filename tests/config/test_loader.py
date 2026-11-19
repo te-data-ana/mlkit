@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from churn_mlops.config import load_config
-from churn_mlops.config.schemas import PromotionConfig, ThresholdConfig
+from mlkit.config import load_config
+from mlkit.config.schemas import PromotionConfig, ThresholdConfig
 
 
 @pytest.mark.unit

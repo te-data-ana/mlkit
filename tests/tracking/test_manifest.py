@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from churn_mlops.tracking.manifest import TrainingManifest
+from mlkit.tracking.manifest import TrainingManifest
 
 
 @pytest.mark.unit

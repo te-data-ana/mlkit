@@ -4,13 +4,13 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from churn_mlops.data.manipulation import (
+from mlkit.data.manipulation import (
     assign_split_values,
     main,
     preprocess_raw_data,
 )
-from churn_mlops.models.features import IdentityFeatureBuilder
-from churn_mlops.use_cases import UseCase, get_use_case
+from mlkit.models.features import IdentityFeatureBuilder
+from mlkit.use_cases import UseCase, get_use_case
 
 
 @pytest.mark.unit
@@ -21,14 +21,14 @@ def test_main_passes_cli_config_to_preprocess_raw_data(
     mock_preprocessing_job = MagicMock()
 
     monkeypatch.setattr(
-        "churn_mlops.data.manipulation.preprocess_raw_data",
+        "mlkit.data.manipulation.preprocess_raw_data",
         mock_preprocessing_job,
     )
 
     monkeypatch.setattr(
         "sys.argv",
         [
-            "churn_mlops.data.manipulation.py",
+            "mlkit.data.manipulation.py",
             "--input_csv",
             "in.csv",
             "--output_csv",
@@ -122,7 +122,7 @@ def test_preprocess_raw_data_uses_selected_use_case_time_column(
         feature_builder_factory=lambda _: IdentityFeatureBuilder(),
     )
     monkeypatch.setattr(
-        "churn_mlops.data.manipulation.load_raw_data",
+        "mlkit.data.manipulation.load_raw_data",
         lambda **_: pd.DataFrame({"value": [1, 2]}),
     )
 

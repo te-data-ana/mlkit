@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: .
-    image: churn-mlops:local
+    image: mlkit:local
     env_file:
       - path: .env
         required: false

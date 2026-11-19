@@ -5,24 +5,24 @@ from unittest.mock import Mock
 
 import pytest
 
-from churn_mlops.use_cases import get_use_case
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 
 
 @pytest.mark.smoke
 def test_project_package_imports_successfully() -> None:
-    import churn_mlops
+    import mlkit
 
-    assert churn_mlops is not None
+    assert mlkit is not None
 
 
 @pytest.mark.smoke
 def test_package_main_dispatches_train_command(monkeypatch) -> None:
-    import churn_mlops
+    import mlkit
 
     observed: dict[str, object] = {}
-    train_module = importlib.import_module("churn_mlops.train")
+    train_module = importlib.import_module("mlkit.train")
 
     def fake_run_training_job(**kwargs: object) -> SimpleNamespace:
         observed["kwargs"] = kwargs
@@ -33,7 +33,7 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
 
     monkeypatch.setattr(train_module, "run_training_job", fake_run_training_job)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "train",
             "--use_case",
@@ -57,10 +57,10 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
 
 @pytest.mark.smoke
 def test_package_main_prints_help_for_empty_args(capsys) -> None:
-    import churn_mlops
+    import mlkit
 
     try:
-        churn_mlops.main([])
+        mlkit.main([])
     except SystemExit as exc:
         assert exc.code == 0
     else:
@@ -69,7 +69,7 @@ def test_package_main_prints_help_for_empty_args(capsys) -> None:
         )
 
     captured = capsys.readouterr()
-    assert "usage: churn-mlops" in captured.out
+    assert "usage: mlkit" in captured.out
     assert "train" in captured.out
     assert "batch-predict" in captured.out
     assert "monitor" in captured.out
@@ -78,17 +78,17 @@ def test_package_main_prints_help_for_empty_args(capsys) -> None:
 
 @pytest.mark.smoke
 def test_package_main_dispatches_monitor_command(monkeypatch) -> None:
-    import churn_mlops
+    import mlkit
 
     observed: dict[str, object] = {}
 
     def fake_run_monitoring(**kwargs: object) -> None:
         observed.update(kwargs)
 
-    monitoring_module = importlib.import_module("churn_mlops.monitoring.core")
+    monitoring_module = importlib.import_module("mlkit.monitoring.core")
     monkeypatch.setattr(monitoring_module, "run_monitoring", fake_run_monitoring)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "monitor",
             "--reference_csv",
@@ -116,9 +116,9 @@ def test_package_main_dispatches_monitor_command(monkeypatch) -> None:
 def test_package_main_builds_report_from_partitioned_datasets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import churn_mlops
-    from churn_mlops import data
-    from churn_mlops.monitoring import core
+    import mlkit
+    from mlkit import data
+    from mlkit.monitoring import core
 
     use_case = SimpleNamespace(time_column="event_date")
     datasets = {
@@ -141,11 +141,11 @@ def test_package_main_builds_report_from_partitioned_datasets(
     monkeypatch.setattr(data, "read_partitioned_dataset", fake_read_partitioned_dataset)
     monkeypatch.setattr(core, "build_monitoring_report", fake_build_monitoring_report)
     monkeypatch.setattr(
-        "churn_mlops.use_cases.get_use_case",
+        "mlkit.use_cases.get_use_case",
         lambda name: use_case,
     )
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "monitor",
             "--reference_dataset",
@@ -182,10 +182,10 @@ def test_package_main_uses_monitoring_model_manifest(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import churn_mlops
-    from churn_mlops import data
-    from churn_mlops.monitoring import core
-    from churn_mlops.tracking import TrainingManifest
+    import mlkit
+    from mlkit import data
+    from mlkit.monitoring import core
+    from mlkit.tracking import TrainingManifest
 
     settings = SimpleNamespace(
         data_dir=tmp_path,
@@ -200,7 +200,7 @@ def test_package_main_uses_monitoring_model_manifest(
     observed_report: dict[str, object] = {}
     observed_log: dict[str, object] = {}
 
-    monkeypatch.setattr(churn_mlops, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
 
     def fake_read_partitioned_dataset(
         dataset_name: str, timestamp_column: str
@@ -222,7 +222,7 @@ def test_package_main_uses_monitoring_model_manifest(
     monkeypatch.setattr(core, "build_monitoring_report", fake_build_monitoring_report)
     monkeypatch.setattr(core, "log_monitoring_run", fake_log_monitoring_run)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "monitor",
             "--reference_dataset",
@@ -270,10 +270,10 @@ def test_package_main_uses_monitoring_model_manifest(
 def test_package_main_rejects_monitor_manifest_with_explicit_model(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import churn_mlops
+    import mlkit
 
     with pytest.raises(SystemExit, match="2"):
-        churn_mlops.main(
+        mlkit.main(
             [
                 "monitor",
                 "--reference_dataset",
@@ -301,7 +301,7 @@ def test_package_main_passes_manifest_to_api_for_serving(
 
     import uvicorn
 
-    import churn_mlops
+    import mlkit
 
     settings = SimpleNamespace(
         data_dir=tmp_path,
@@ -309,11 +309,11 @@ def test_package_main_passes_manifest_to_api_for_serving(
         api_port=8000,
     )
     run = Mock()
-    monkeypatch.setattr(churn_mlops, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
     monkeypatch.setattr(uvicorn, "run", run)
     monkeypatch.delenv("MODEL_MANIFEST", raising=False)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "serve",
             "--model_manifest",
@@ -325,7 +325,7 @@ def test_package_main_passes_manifest_to_api_for_serving(
 
     assert os.environ["MODEL_MANIFEST"] == str(tmp_path / "manifests/unregistered.json")
     run.assert_called_once_with(
-        "churn_mlops.serving.api:create_app_from_environment",
+        "mlkit.serving.api:create_app_from_environment",
         host="127.0.0.1",
         port=8000,
         reload=False,
@@ -338,8 +338,8 @@ def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import churn_mlops
-    from churn_mlops.monitoring import core
+    import mlkit
+    from mlkit.monitoring import core
 
     settings = SimpleNamespace(
         output_dir=tmp_path / "reports",
@@ -353,10 +353,10 @@ def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
     def fake_run_monitoring(**kwargs: object) -> None:
         observed.update(kwargs)
 
-    monkeypatch.setattr(churn_mlops, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
     monkeypatch.setattr(core, "run_monitoring", fake_run_monitoring)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "monitor",
             "--reference_csv",
@@ -380,7 +380,7 @@ def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
 
 @pytest.mark.smoke
 def test_package_main_dispatches_serve_command(monkeypatch) -> None:
-    import churn_mlops
+    import mlkit
 
     called = {}
 
@@ -397,7 +397,7 @@ def test_package_main_dispatches_serve_command(monkeypatch) -> None:
     monkeypatch.setitem(importlib.sys.modules, "uvicorn", fake_uvicorn_module)
     monkeypatch.setenv("MODEL_NAME", "churn-rf-OOT_26Q2")
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "serve",
             "--host",
@@ -411,7 +411,7 @@ def test_package_main_dispatches_serve_command(monkeypatch) -> None:
     )
 
     assert called == {
-        "app": "churn_mlops.serving.api:create_app_from_environment",
+        "app": "mlkit.serving.api:create_app_from_environment",
         "host": "0.0.0.0",
         "port": 9000,
         "reload": True,
@@ -424,15 +424,15 @@ def test_package_main_dispatches_prepare_data(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import churn_mlops
-    from churn_mlops import data
-    from churn_mlops.data import storage
+    import mlkit
+    from mlkit import data
+    from mlkit.data import storage
 
     raw_data = object()
     validated_data = object()
     observed: dict[str, object] = {}
     monkeypatch.setattr(
-        churn_mlops,
+        mlkit,
         "ServingSettings",
         lambda: SimpleNamespace(
             data_dir=tmp_path,
@@ -461,9 +461,7 @@ def test_package_main_dispatches_prepare_data(
         fake_write_partitioned_dataset,
     )
 
-    churn_mlops.main(
-        ["prepare-data", "--input_csv", "training.csv", "--use_case", "churn"]
-    )
+    mlkit.main(["prepare-data", "--input_csv", "training.csv", "--use_case", "churn"])
 
     assert observed == {
         "load": {"file_name": "training.csv", "data_dir": tmp_path / "raw"},
@@ -483,8 +481,8 @@ def test_package_main_dispatches_create_split(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import churn_mlops
-    from churn_mlops.data import splitting
+    import mlkit
+    from mlkit.data import splitting
 
     use_case = SimpleNamespace(time_column="event_date")
     observed: dict[str, object] = {}
@@ -501,11 +499,11 @@ def test_package_main_dispatches_create_split(
         fake_create_time_based_split,
     )
     monkeypatch.setattr(
-        "churn_mlops.use_cases.get_use_case",
+        "mlkit.use_cases.get_use_case",
         lambda name: use_case,
     )
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "create-split",
             "--dataset_name",
@@ -537,9 +535,9 @@ def test_package_main_dispatches_create_split(
 def test_package_main_uses_selected_use_case_time_columns_for_monitoring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import churn_mlops
-    from churn_mlops import data
-    from churn_mlops.monitoring import core
+    import mlkit
+    from mlkit import data
+    from mlkit.monitoring import core
 
     use_case = SimpleNamespace(name="alternate", time_column="event_date")
     datasets = {"reference": object(), "analysis": object()}
@@ -552,13 +550,13 @@ def test_package_main_uses_selected_use_case_time_columns_for_monitoring(
         return datasets[dataset_name]
 
     monkeypatch.setattr(
-        "churn_mlops.use_cases.get_use_case",
+        "mlkit.use_cases.get_use_case",
         lambda name: use_case,
     )
     monkeypatch.setattr(data, "read_partitioned_dataset", fake_read_partitioned_dataset)
     monkeypatch.setattr(core, "build_monitoring_report", lambda **kwargs: None)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "monitor",
             "--reference_dataset",
@@ -592,9 +590,9 @@ def test_package_main_dispatches_log_ingestion(
     function_name: str,
     dataset_name: str,
 ) -> None:
-    import churn_mlops
+    import mlkit
 
-    ingestion = importlib.import_module("churn_mlops.data.ingestion")
+    ingestion = importlib.import_module("mlkit.data.ingestion")
     observed: dict[str, str] = {}
     use_case = SimpleNamespace(time_column="event_date")
 
@@ -604,11 +602,11 @@ def test_package_main_dispatches_log_ingestion(
 
     monkeypatch.setattr(ingestion, function_name, fake_ingest)
     monkeypatch.setattr(
-        "churn_mlops.use_cases.get_use_case",
+        "mlkit.use_cases.get_use_case",
         lambda name: use_case,
     )
 
-    churn_mlops.main([command, "--use_case", "alternate"])
+    mlkit.main([command, "--use_case", "alternate"])
 
     assert observed == {
         "dataset_name": dataset_name,

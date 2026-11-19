@@ -1,7 +1,7 @@
 import pytest
 from sklearn.svm import SVC, LinearSVC
 
-from churn_mlops.models import create_model
+from mlkit.models import create_model
 
 
 @pytest.mark.unit
