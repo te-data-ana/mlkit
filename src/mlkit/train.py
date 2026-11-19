@@ -53,6 +53,8 @@ def run_training_job(
     register_model: bool = False,
     promote_model: bool = False,
     write_manifest: bool = True,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> TrainingResult:
     """Run the configured training, tracking, registration, and promotion flow.
 
@@ -73,6 +75,8 @@ def run_training_job(
         write_manifest: Boolean flag for writing manifest JSON file, which
             contains experiment details like run and registered model version
             (default: True).
+        settings: Runtime snapshot used for unspecified directories and
+            tracking locations.
 
     Returns:
         TrainingResult containing the fitted pipeline, metrics, classifier
@@ -114,11 +118,17 @@ def run_training_job(
             "register_model, promote_model, and tune_model must be booleans."
         )
 
-    settings = RuntimeSettings()
-    resolved_config_dir = config_dir or settings.config_dir
-    resolved_split_dir = split_dir or settings.data_dir / "splits"
-    resolved_artifact_dir = artifact_dir or settings.artifact_dir
-    resolved_tracking_uri = tracking_uri or settings.mlflow_tracking_uri
+    settings = settings or RuntimeSettings()
+    resolved_config_dir = config_dir if config_dir is not None else settings.config_dir
+    resolved_split_dir = (
+        split_dir if split_dir is not None else settings.data_dir / "splits"
+    )
+    resolved_artifact_dir = (
+        artifact_dir if artifact_dir is not None else settings.artifact_dir
+    )
+    resolved_tracking_uri = (
+        tracking_uri if tracking_uri is not None else settings.mlflow_tracking_uri
+    )
 
     try:
         config, config_file_path = load_config(

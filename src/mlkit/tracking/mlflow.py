@@ -23,6 +23,8 @@ def setup_local_experiment(
     experiment_name: str,
     tracking_uri: str | None = None,
     artifact_dir: Path | None = None,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> str:
     """Configure local MLflow tracking and select an experiment.
 
@@ -31,6 +33,8 @@ def setup_local_experiment(
         tracking_uri: Optional MLflow tracking URI. Defaults to the local
             project database.
         artifact_dir: Directory used for experiment artifacts.
+        settings: Runtime snapshot used for unspecified tracking/artifact
+            locations.
 
     Returns:
         MLflow experiment identifier.
@@ -39,9 +43,17 @@ def setup_local_experiment(
         MlflowException: If the experiment cannot be created or retrieved.
     """
 
-    settings = RuntimeSettings()
-    resolved_tracking_uri = tracking_uri or settings.mlflow_tracking_uri
-    resolved_artifact_dir = artifact_dir or settings.artifact_dir
+    if tracking_uri is not None and artifact_dir is not None:
+        resolved_tracking_uri = tracking_uri
+        resolved_artifact_dir = artifact_dir
+    else:
+        settings = settings or RuntimeSettings()
+        resolved_tracking_uri = (
+            tracking_uri if tracking_uri is not None else settings.mlflow_tracking_uri
+        )
+        resolved_artifact_dir = (
+            artifact_dir if artifact_dir is not None else settings.artifact_dir
+        )
     resolved_artifact_dir.mkdir(parents=True, exist_ok=True)
     mlflow.set_tracking_uri(resolved_tracking_uri)
 

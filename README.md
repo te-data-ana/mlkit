@@ -722,7 +722,9 @@ a complete MLflow history.
 
 ## Runtime configuration
 
-Environment variables can override the runtime defaults:
+Environment variables can override the runtime defaults. Settings are read once
+per workflow or API process and are immutable snapshots; change the environment
+before starting a workflow or construct a new settings instance.
 
 | Variable | Local default | Purpose |
 | --- | --- | --- |
@@ -736,13 +738,14 @@ Environment variables can override the runtime defaults:
 | `API_HOST` | `127.0.0.1` | Host interface for `serve` |
 | `API_PORT` | `8000` | Port for `serve` |
 | `REQUEST_ID_HEADER` | `X-Request-ID` | Header used to pass request IDs |
-| `LOG_FEATURES` | `True` | Whether validated features are written to API logs |
+| `LOG_FEATURES` | `False` | Set to `True` to include validated features in API logs |
 | `LOG_LEVEL` | Application default | Logging verbosity |
 
 Runtime directories can also be overridden:
 
-| Variable | Local default | Container default |
+| Variable | Local default relative to project root | Container default |
 | --- | --- | --- |
+| `MLKIT_PROJECT_ROOT` | Current working directory | `/app` |
 | `DATA_DIR` | `data` | `/app/data` |
 | `CONFIG_DIR` | `src/config` | `/app/src/config` |
 | `ARTIFACT_DIR` | `artifacts_local` | `/app/artifacts` |
@@ -750,9 +753,22 @@ Runtime directories can also be overridden:
 | `LOGGING_DIR` | `logs_local` | `/app/logs` |
 | `OUTPUT_DIR` | `output` | `/app/output` |
 
-By default, the MLflow SQLite database is created inside `TRACKING_DIR`.
-`LOG_FEATURES=False` disables feature values in inference logs while retaining
-prediction and operational telemetry.
+`MLKIT_PROJECT_ROOT` defaults to the current working directory. Each
+individual directory variable overrides its root-derived default; relative
+directory paths are resolved against the current working directory.
+Users must supply the training configuration files under
+`<project root>/src/config` or set `CONFIG_DIR` to their location.
+
+Explicit function arguments take precedence over settings and environment
+variables. When constructing settings directly, use Python field names such as
+`RuntimeSettings(data_dir=...)`.
+
+Settings are immutable: construct a new instance with the desired values
+instead of changing fields after creation.
+
+If `MLFLOW_TRACKING_URI` is unset, the SQLite database is located inside the
+effective `TRACKING_DIR`. Docker and Compose explicitly set the URI; override
+both settings together to change the MLflow tracking location.
 
 ## Run with Docker Compose
 

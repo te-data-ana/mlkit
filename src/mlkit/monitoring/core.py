@@ -786,6 +786,7 @@ def run_monitoring(
     error_log: Path | None = None,
     output_dir: Path | None = None,
     model_version: int | None = None,
+    settings: RuntimeSettings | None = None,
 ) -> MonitoringReport:
     """Load monitoring inputs and generate a report for batch or API predictions.
 
@@ -802,6 +803,7 @@ def run_monitoring(
         output_dir: Output directory for the monitoring summary CSV. Defaults to
             the runtime settings output directory.
         model_version: Optional exact model version to include in the report.
+        settings: Runtime snapshot used when no output directory is supplied.
 
     Returns:
         A MonitoringReport summarizing the monitoring results for time periods
@@ -816,8 +818,11 @@ def run_monitoring(
     if error_log is not None and prediction_log is None:
         raise ValueError("error_log can only be used with prediction_log.")
 
-    settings = RuntimeSettings()
-    report_dir = output_dir or settings.output_dir
+    report_dir = (
+        output_dir
+        if output_dir is not None
+        else (settings or RuntimeSettings()).output_dir
+    )
     reference = _read_scored_csv(reference_csv)
     if analysis_csv is not None:
         return build_monitoring_report(
@@ -857,6 +862,7 @@ def log_monitoring_run(
     run_name: str,
     tags: Mapping[str, str],
     tracking_uri: str | None = None,
+    settings: RuntimeSettings | None = None,
 ) -> None:
     """Log a monitoring report artifact and aggregate summary metrics to MLflow.
 
@@ -866,14 +872,18 @@ def log_monitoring_run(
         run_name: Name identifying the monitored cohorts and model.
         tags: Cohort, model, and source metadata for the run.
         tracking_uri: Optional MLflow tracking URI.
+        settings: Runtime snapshot used for unspecified tracking locations.
     """
     from mlkit.tracking import setup_local_experiment
 
-    settings = RuntimeSettings()
-    resolved_tracking_uri = tracking_uri or settings.mlflow_tracking_uri
+    settings = settings or RuntimeSettings()
+    resolved_tracking_uri = (
+        tracking_uri if tracking_uri is not None else settings.mlflow_tracking_uri
+    )
     experiment_id = setup_local_experiment(
         experiment_name=experiment_name,
         tracking_uri=resolved_tracking_uri,
+        settings=settings,
     )
     with mlflow.start_run(experiment_id=experiment_id, run_name=run_name):
         mlflow.set_tags(dict(tags))

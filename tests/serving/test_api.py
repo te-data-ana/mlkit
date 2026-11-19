@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from mlkit.serving import api
+from mlkit.serving import api, model_loader
 from mlkit.serving.model_loader import LoadedModel, load_model
 from mlkit.serving.prediction_logger import PredictionLogger
 from mlkit.use_cases import UseCase, get_use_case
@@ -168,14 +168,21 @@ def test_predictor_loads_once_per_api_lifetime(
 ) -> None:
     load_count = 0
     loaded_use_cases: list[UseCase] = []
+    loaded_settings: list[object] = []
 
-    def load_once(*, use_case: UseCase) -> LoadedModel:
+    settings_factory = Mock(wraps=api.ServingSettings)
+
+    def load_once(
+        *, use_case: UseCase, manifest: object | None, settings: object
+    ) -> LoadedModel:
         nonlocal load_count
         load_count += 1
         loaded_use_cases.append(use_case)
+        loaded_settings.append(settings)
         return mock_model_factory()
 
     monkeypatch.setattr(api, "load_model", load_once)
+    monkeypatch.setattr(api, "ServingSettings", settings_factory)
 
     with TestClient(api.create_app(get_use_case("churn"))) as test_client:
         first_response = test_client.post("/predict", json=sample_dict)
@@ -184,7 +191,9 @@ def test_predictor_loads_once_per_api_lifetime(
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     assert load_count == 1
+    settings_factory.assert_called_once_with()
     assert loaded_use_cases == [CHURN_USE_CASE]
+    assert loaded_settings == [test_client.app.state.settings]
 
 
 @pytest.mark.unit
@@ -215,7 +224,49 @@ def test_api_loads_model_from_manifest_at_startup(
         ready_response = test_client.get("/ready")
 
     assert ready_response.status_code == 200
-    load.assert_called_once_with(use_case=CHURN_USE_CASE, manifest=manifest)
+    load.assert_called_once_with(
+        use_case=CHURN_USE_CASE, manifest=manifest, settings=settings
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("model_version", "expected_alias"),
+    [(None, "champion"), (9, None)],
+)
+def test_api_loads_configured_model_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_model_factory: Callable[..., LoadedModel],
+    tmp_path: Path,
+    model_version: int | None,
+    expected_alias: str | None,
+) -> None:
+    settings = api.ServingSettings(
+        model_name="churn-risk",
+        model_alias="champion",
+        model_version=model_version,
+        model_manifest=None,
+        logging_dir=tmp_path,
+    )
+    registry = Mock()
+    registry.load_registered_model.return_value = SimpleNamespace(
+        model=mock_model_factory().model,
+        model_version=SimpleNamespace(version="9"),
+        model_threshold=0.5,
+    )
+    monkeypatch.setattr(api, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(model_loader, "ModelRegistry", lambda: registry)
+    monkeypatch.setattr(model_loader.mlflow, "set_tracking_uri", Mock())
+
+    with TestClient(api.create_app(CHURN_USE_CASE)) as test_client:
+        assert test_client.get("/ready").status_code == 200
+
+    registry.load_registered_model.assert_called_once_with(
+        model_name="churn-risk",
+        expected_use_case="churn",
+        model_alias=expected_alias,
+        model_version=model_version,
+    )
 
 
 @pytest.mark.unit
@@ -252,7 +303,9 @@ def test_api_serves_predictions_from_registered_model(
     registered_model: dict[str, object],
     sample_dict: dict[str, Any],
 ) -> None:
-    def load_registered_model(*, use_case: UseCase) -> LoadedModel:
+    def load_registered_model(
+        *, use_case: UseCase, manifest: object | None, settings: object
+    ) -> LoadedModel:
         return load_model(
             use_case=use_case,
             tracking_uri=str(registered_model["tracking_uri"]),

@@ -4,7 +4,7 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
-from .config import ServingSettings, configure_logging
+from .config import RuntimeSettings, ServingSettings, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,17 @@ def _parse_boolean(value: str) -> bool:
     raise argparse.ArgumentTypeError(f"Expected a boolean value, received '{value}'.")
 
 
+def _parse_port(value: str) -> int:
+    """Parse a TCP port in the range accepted by the server."""
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Port must be an integer.") from exc
+    if not 0 <= port <= 65535:
+        raise argparse.ArgumentTypeError("Port must be between 0 and 65535.")
+    return port
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Parse and dispatch commands for the package CLI.
 
@@ -32,8 +43,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
 
     configure_logging()
-
-    settings = ServingSettings()
 
     parser = argparse.ArgumentParser(
         prog="mlkit",
@@ -260,12 +269,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Start the FastAPI prediction service.",
     )
     serve_parser.add_argument(
-        "--host", default=settings.api_host, help="Hostname for the API server."
+        "--host", default=None, help="Hostname for the API server."
     )
     serve_parser.add_argument(
         "--port",
-        type=int,
-        default=settings.api_port,
+        type=_parse_port,
+        default=None,
         help="Port for the API server.",
     )
     serve_parser.add_argument(
@@ -447,6 +456,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.print_help()
         raise SystemExit(0)
 
+    needs_serving = args.command in {"serve", "batch-predict"}
+    if needs_serving:
+        settings = (
+            ServingSettings(api_port=args.port)
+            if args.command == "serve" and args.port is not None
+            else ServingSettings()
+        )
+    else:
+        settings = RuntimeSettings()
+
     if args.command == "prepare-data":
         from .data import load_raw_data, validate_data
         from .data.storage import write_partitioned_dataset
@@ -461,6 +480,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             dataset_name="partitioned",
             timestamp_column=args.timestamp_column or use_case.time_column,
             overwrite_partitions=True,
+            settings=settings,
         )
 
         return
@@ -477,6 +497,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             split_date=args.split_date,
             end_date=args.end_date,
             split_name=args.split_name,
+            settings=settings,
         )
 
         logger.info("OOT train/test split created with: %s", split_metadata)
@@ -495,6 +516,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             tune_model=args.tune_model,
             register_model=args.register_model,
             promote_model=args.promote_model,
+            settings=settings,
         )
         logger.info(
             "Successfully trained %s model: AUC=%.4f",
@@ -552,6 +574,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 model_name=None if manifest is not None else args.model_name,
                 model_version=None if manifest is not None else args.model_version,
                 manifest=manifest,
+                settings=settings,
             )
 
             output_path = settings.output_dir / args.output_csv
@@ -569,6 +592,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 timestamp_column=timestamp_column,
                 start=args.start_date,
                 end=args.end_date,
+                settings=settings,
             )
             df_pred = run_batch_prediction(
                 df=df,
@@ -576,12 +600,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 model_name=None if manifest is not None else args.model_name,
                 model_version=None if manifest is not None else args.model_version,
                 manifest=manifest,
+                settings=settings,
             )
             write_partitioned_dataset(
                 df=df_pred,
                 dataset_name=args.output_dataset,
                 timestamp_column=timestamp_column,
                 overwrite_partitions=True,
+                settings=settings,
             )
             logger.info(
                 "Partitioned batch prediction written to '%s'.",
@@ -622,8 +648,8 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         uvicorn.run(
             "mlkit.serving.api:create_app_from_environment",
-            host=args.host,
-            port=args.port,
+            host=args.host if args.host is not None else settings.api_host,
+            port=settings.api_port,
             reload=args.reload,
             factory=True,
         )
@@ -637,6 +663,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             dataset_name=args.dataset_name,
             timestamp_column=args.timestamp_column
             or get_use_case(args.use_case).time_column,
+            settings=settings,
         )
         return
 
@@ -648,6 +675,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             dataset_name=args.dataset_name,
             timestamp_column=args.timestamp_column
             or get_use_case(args.use_case).time_column,
+            settings=settings,
         )
         return
 
@@ -706,15 +734,18 @@ def main(argv: Sequence[str] | None = None) -> None:
             reference = read_partitioned_dataset(
                 dataset_name=args.reference_dataset,
                 timestamp_column=dataset_timestamp_column,
+                settings=settings,
             )
             analysis = read_partitioned_dataset(
                 dataset_name=args.analysis_dataset,
                 timestamp_column=dataset_timestamp_column,
+                settings=settings,
             )
             errors = (
                 read_partitioned_dataset(
                     dataset_name=args.error_dataset,
                     timestamp_column=dataset_timestamp_column,
+                    settings=settings,
                 )
                 if args.error_dataset is not None
                 else None
@@ -786,6 +817,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 ),
                 run_name=args.run_name or "monitoring",
                 tags=tags,
+                settings=settings,
             )
         return
 

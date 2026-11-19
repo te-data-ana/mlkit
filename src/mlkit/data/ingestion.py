@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from mlkit.config import RuntimeSettings, ServingSettings
+from mlkit.config import RuntimeSettings
 from mlkit.data.jsonl_logs import read_jsonl_log
 from mlkit.data.storage import write_partitioned_dataset
 from mlkit.data.validation import validate_data
@@ -22,6 +22,8 @@ def load_raw_data(
     index_col: str | None = None,
     data_dir: Path | None = None,
     drop_columns: list[str] | None = None,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> pd.DataFrame:
     """Load and normalize a raw CSV file from the configured data directory.
 
@@ -30,6 +32,7 @@ def load_raw_data(
         index_col: Optional column name to use as the DataFrame index.
         data_dir: Directory containing the CSV file.
         drop_columns: Optional list of column names to drop from loaded data.
+        settings: Runtime snapshot used when no data directory is supplied.
 
     Returns:
         DataFrame with normalized column names, nullable dtypes, the optional
@@ -38,8 +41,11 @@ def load_raw_data(
     Raises:
         FileNotFoundError: If the requested CSV file does not exist.
     """
-    settings = RuntimeSettings()
-    resolved_data_dir = data_dir or settings.data_dir / "raw"
+    resolved_data_dir = (
+        data_dir
+        if data_dir is not None
+        else (settings or RuntimeSettings()).data_dir / "raw"
+    )
 
     try:
         logger.info("Loading raw dataset '%s' from '%s'.", file_name, resolved_data_dir)
@@ -75,7 +81,9 @@ def load_raw_data(
         raise
 
 
-def combine_sample_predictions(data_dir: Path | None = None) -> pd.DataFrame:
+def combine_sample_predictions(
+    data_dir: Path | None = None, *, settings: RuntimeSettings | None = None
+) -> pd.DataFrame:
     """Combine sample prediction files into a single DataFrame.
 
     Reads all CSV files matching the pattern
@@ -87,14 +95,16 @@ def combine_sample_predictions(data_dir: Path | None = None) -> pd.DataFrame:
         data_dir: Directory containing sample prediction CSV files. If
             not provided, the default output data directory from the
             runtime settings is used.
+        settings: Runtime snapshot used when no data directory is supplied.
 
     Returns:
         A DataFrame containing the combined prediction records from all
         matching files, including a ``run_id`` column identifying the
         source file of each record.
     """
-    settings = RuntimeSettings()
-    resolved_data_dir = data_dir or settings.output_dir
+    resolved_data_dir = (
+        data_dir if data_dir is not None else (settings or RuntimeSettings()).output_dir
+    )
 
     dfs = []
 
@@ -113,6 +123,8 @@ def ingest_sample_data(
     dataset_name: str,
     timestamp_column: str,
     use_case: UseCase,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> None:
     """
     Combine sample prediction files, validate the resulting data,
@@ -124,15 +136,18 @@ def ingest_sample_data(
         timestamp_column:
             Name of the timestamp column used for partitioning.
         use_case: Data contract to validate before writing.
+        settings: Runtime snapshot used for input and output locations.
     """
-    df = combine_sample_predictions()
-    df = validate_data(df, use_case)
+    settings = settings or RuntimeSettings()
+    df = combine_sample_predictions(settings=settings)
+    df = validate_data(df=df, use_case=use_case)
 
     write_partitioned_dataset(
         df=df,
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,
         overwrite_partitions=True,
+        settings=settings,
     )
 
 
@@ -140,6 +155,8 @@ def ingest_jsonl_log(
     dataset_name: str,
     timestamp_column: str,
     jsonl_path: Path,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> None:
     """Ingest JSONL logs into a partitioned dataset.
 
@@ -155,6 +172,7 @@ def ingest_jsonl_log(
         timestamp_column: Name of the timestamp column used for
             partitioning the dataset.
         jsonl_path: Path to the source JSONL log file.
+        settings: Runtime snapshot used for the output dataset.
 
     Raises:
         KeyError: If ``timestamp_column`` is not present in the
@@ -175,6 +193,7 @@ def ingest_jsonl_log(
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,
         overwrite_partitions=True,
+        settings=settings,
     )
 
 
@@ -182,17 +201,20 @@ def ingest_prediction_logs(
     dataset_name: str,
     timestamp_column: str,
     jsonl_path: Path | None = None,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> None:
     """Ingest API prediction logs into a partitioned dataset.
 
     Uses the configured prediction log path when ``jsonl_path`` is not provided.
     """
-    settings = ServingSettings()
+    settings = settings or RuntimeSettings()
 
     ingest_jsonl_log(
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,
         jsonl_path=jsonl_path or settings.prediction_log_path,
+        settings=settings,
     )
 
 
@@ -200,15 +222,18 @@ def ingest_error_logs(
     dataset_name: str,
     timestamp_column: str,
     jsonl_path: Path | None = None,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> None:
     """Ingest API error logs into a partitioned dataset.
 
     Uses the configured error log path when ``jsonl_path`` is not provided.
     """
-    settings = ServingSettings()
+    settings = settings or RuntimeSettings()
 
     ingest_jsonl_log(
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,
         jsonl_path=jsonl_path or settings.error_log_path,
+        settings=settings,
     )

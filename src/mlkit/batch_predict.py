@@ -2,6 +2,7 @@ import logging
 
 import pandas as pd
 
+from mlkit.config import ServingSettings
 from mlkit.data import validate_data
 from mlkit.serving import Predictor, load_model
 from mlkit.tracking import TrainingManifest
@@ -18,6 +19,8 @@ def run_batch_prediction(
     model_alias: str | None = None,
     model_version: int | None = None,
     manifest: TrainingManifest | None = None,
+    *,
+    settings: ServingSettings | None = None,
 ) -> pd.DataFrame:
     """Validate input data and return a DataFrame containing predictions.
 
@@ -30,6 +33,7 @@ def run_batch_prediction(
         model_version: Optional exact registered model version.
         manifest: Optional manifest identifying an exact registered or logged
             model.
+        settings: Serving snapshot used for unspecified model settings.
 
     Returns:
         Validated input data with model predictions.
@@ -45,6 +49,7 @@ def run_batch_prediction(
             model_alias=model_alias,
             model_version=model_version,
             manifest=manifest,
+            settings=settings,
         )
 
         predictor = Predictor(loaded_model)

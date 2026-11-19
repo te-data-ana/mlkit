@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+from mlkit import _parse_port
 from mlkit.config import ServingSettings, configure_logging
 from mlkit.data.ingestion import load_raw_data
 from mlkit.data.validation import validate_data
@@ -90,7 +91,10 @@ def predict_samples(
     Raises:
         requests.HTTPError: If any prediction request returns a non-
             successful status code.
+        ValueError: If the API port is zero and cannot be connected to.
     """
+    if settings.api_port == 0:
+        raise ValueError("A sample client requires a nonzero API port.")
     logger = logging.getLogger(__name__)
 
     predictions = []
@@ -281,7 +285,7 @@ def stop_api_server(process: subprocess.Popen) -> None:
         process.wait()
 
 
-def custom_parser(settings: ServingSettings) -> argparse.ArgumentParser:
+def custom_parser(settings: ServingSettings | None = None) -> argparse.ArgumentParser:
     """Parse command line arguments."""
 
     parser = argparse.ArgumentParser()
@@ -339,13 +343,13 @@ def custom_parser(settings: ServingSettings) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--host",
-        default=settings.api_host,
+        default=settings.api_host if settings is not None else None,
         help="Hostname for the API server.",
     )
     parser.add_argument(
         "--port",
-        type=int,
-        default=settings.api_port,
+        type=_parse_port,
+        default=settings.api_port if settings is not None else None,
         help="Port for the API server.",
     )
     parser.add_argument(
@@ -365,6 +369,7 @@ def configure_model_environment(
     """Configure model-related environment variables."""
 
     if args.model_manifest is not None:
+        settings = settings or ServingSettings()
         model_manifest_file = settings.data_dir / args.model_manifest
         os.environ["MODEL_MANIFEST"] = str(model_manifest_file)
 
@@ -392,9 +397,7 @@ def main() -> None:
 
     configure_logging()
 
-    settings = ServingSettings()
-
-    parser = custom_parser(settings=settings)
+    parser = custom_parser()
     args = parser.parse_args()
 
     if not args.use_case:
@@ -407,6 +410,16 @@ def main() -> None:
         )
     if (args.model_name is None) != (args.model_version is None):
         parser.error("--model_name and --model_version must be provided together.")
+    overrides: dict[str, str | int] = {}
+    if args.host is not None:
+        overrides["api_host"] = args.host
+    if args.port is not None:
+        overrides["api_port"] = args.port
+    settings = ServingSettings(**overrides)
+    args.host = settings.api_host
+    args.port = settings.api_port
+    if args.port == 0:
+        parser.error("A sample client requires a nonzero API port.")
 
     configure_model_environment(args=args, settings=settings)
     os.environ["USE_CASE"] = args.use_case

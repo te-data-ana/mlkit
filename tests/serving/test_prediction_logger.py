@@ -3,6 +3,9 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from mlkit.config import ServingSettings
 from mlkit.serving.prediction_logger import PredictionLogger
 from mlkit.serving.predictor import PredictionResult
 from mlkit.use_cases import get_use_case
@@ -101,6 +104,43 @@ def test_log_error_writes_error_event_with_features(
     assert record["error_message"] == "invalid input"
     assert record["traceback"] == "traceback content"
     assert record["features"] == sample_input.model_dump()
+
+
+def test_default_settings_omit_features_from_prediction_and_error_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sample_input: ChurnInputFeatures,
+    sample_prediction_result: PredictionResult,
+) -> None:
+    monkeypatch.delenv("LOG_FEATURES", raising=False)
+    settings = ServingSettings(logging_dir=tmp_path)
+    logger = PredictionLogger(
+        prediction_log_path=settings.prediction_log_path,
+        error_log_path=settings.error_log_path,
+        log_features=settings.log_features,
+        use_case=CHURN_USE_CASE,
+    )
+    logger.log_prediction(
+        request_id="request",
+        latency_ms=1,
+        prediction=sample_prediction_result,
+        features=sample_input,
+    )
+    predictor = SimpleNamespace(
+        metadata=sample_prediction_result.metadata,
+        _timestamp=lambda: "2026-01-01T00:00:00",
+    )
+    logger.log_error(
+        request_id="request",
+        latency_ms=1,
+        predictor=predictor,
+        exception=ValueError("error"),
+        traceback_text="traceback",
+        features=sample_input,
+    )
+
+    for path in (settings.prediction_log_path, settings.error_log_path):
+        assert "features" not in json.loads(path.read_text())
 
 
 def test_prediction_logger_init_creates_parent_directories(tmp_path: Path) -> None:
