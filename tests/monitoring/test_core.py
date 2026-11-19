@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from churn_mlops.monitoring import core
-from churn_mlops.use_cases import get_use_case
+from mlkit.monitoring import core
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 
@@ -519,7 +519,7 @@ def test_log_monitoring_run_logs_tags_and_artifact(
     )
     setup_experiment = MagicMock(return_value="experiment-id")
     monkeypatch.setattr(
-        "churn_mlops.tracking.setup_local_experiment",
+        "mlkit.tracking.setup_local_experiment",
         setup_experiment,
     )
     monkeypatch.setattr(core.mlflow, "start_run", MagicMock())

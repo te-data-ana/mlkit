@@ -6,12 +6,12 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 
-import churn_mlops
-from churn_mlops import batch_predict, data
-from churn_mlops.data import storage
-from churn_mlops.tracking.manifest import TrainingManifest
-from churn_mlops.tracking.registry import ModelRegistry
-from churn_mlops.use_cases import get_use_case
+import mlkit
+from mlkit import batch_predict, data
+from mlkit.data import storage
+from mlkit.tracking.manifest import TrainingManifest
+from mlkit.tracking.registry import ModelRegistry
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 
@@ -37,11 +37,11 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
     )
     load_raw_data = Mock(return_value=input_df)
     predict = Mock(return_value=prediction_df)
-    monkeypatch.setattr(churn_mlops, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
     monkeypatch.setattr(data, "load_raw_data", load_raw_data)
     monkeypatch.setattr(batch_predict, "run_batch_prediction", predict)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "batch-predict",
             "--input_csv",
@@ -183,7 +183,7 @@ def test_batch_predict_cli_reads_model_manifest(
     tmp_path: Path,
     training_manifest_factory: TrainingManifest,
 ) -> None:
-    from churn_mlops import tracking
+    from mlkit import tracking
 
     settings = SimpleNamespace(
         data_dir=tmp_path,
@@ -196,12 +196,12 @@ def test_batch_predict_cli_reads_model_manifest(
     manifest = training_manifest_factory()
     predict = Mock(return_value=prediction_df)
 
-    monkeypatch.setattr(churn_mlops, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
     monkeypatch.setattr(data, "load_raw_data", Mock(return_value=input_df))
     monkeypatch.setattr(tracking.TrainingManifest, "read", Mock(return_value=manifest))
     monkeypatch.setattr(batch_predict, "run_batch_prediction", predict)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "batch-predict",
             "--input_csv",
@@ -230,7 +230,7 @@ def test_batch_predict_cli_reads_unregistered_model_manifest(
     tmp_path: Path,
     training_manifest_factory: TrainingManifest,
 ) -> None:
-    from churn_mlops import tracking
+    from mlkit import tracking
 
     settings = SimpleNamespace(
         data_dir=tmp_path,
@@ -247,12 +247,12 @@ def test_batch_predict_cli_reads_unregistered_model_manifest(
     )
     predict = Mock(return_value=prediction_df)
 
-    monkeypatch.setattr(churn_mlops, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
     monkeypatch.setattr(data, "load_raw_data", Mock(return_value=input_df))
     monkeypatch.setattr(tracking.TrainingManifest, "read", Mock(return_value=manifest))
     monkeypatch.setattr(batch_predict, "run_batch_prediction", predict)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "batch-predict",
             "--input_csv",
@@ -307,7 +307,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
     write_dataset = Mock()
 
     monkeypatch.setattr(
-        churn_mlops,
+        mlkit,
         "ServingSettings",
         lambda: SimpleNamespace(
             data_dir=Path("data"),
@@ -320,7 +320,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
     monkeypatch.setattr(batch_predict, "run_batch_prediction", predict)
     monkeypatch.setattr(storage, "write_partitioned_dataset", write_dataset)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "batch-predict",
             "--input_dataset",
@@ -401,7 +401,7 @@ def test_batch_predict_cli_rejects_invalid_arguments(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        churn_mlops.main(["batch-predict", "--use_case", "churn", *arguments])
+        mlkit.main(["batch-predict", "--use_case", "churn", *arguments])
 
     assert exc_info.value.code == 2
     assert error_message in capsys.readouterr().err

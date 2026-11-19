@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from churn_mlops.evaluation import metrics
+from mlkit.evaluation import metrics
 
 
 @pytest.mark.unit

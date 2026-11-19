@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from churn_mlops.config.schemas import (
+from mlkit.config.schemas import (
     CalibrationConfig,
     ClassifierConfig,
     PreprocessingConfig,
@@ -18,8 +18,8 @@ from churn_mlops.config.schemas import (
     ThresholdConfig,
     TrainingConfig,
 )
-from churn_mlops.evaluation import metrics
-from churn_mlops.tracking.manifest import (
+from mlkit.evaluation import metrics
+from mlkit.tracking.manifest import (
     LoggedModelReference,
     ManifestData,
     ManifestEvaluation,
@@ -29,7 +29,7 @@ from churn_mlops.tracking.manifest import (
     ManifestTraining,
     TrainingManifest,
 )
-from churn_mlops.use_cases import CHURN_USE_CASE
+from mlkit.use_cases import CHURN_USE_CASE
 
 
 @pytest.fixture
@@ -364,8 +364,8 @@ def registered_model(
     sample_config_yaml: Path,
 ) -> dict[str, object]:
     """Train and register a model in an isolated temporary MLflow store."""
-    from churn_mlops import train
-    from churn_mlops.data import splitting, storage
+    from mlkit import train
+    from mlkit.data import splitting, storage
 
     use_case = CHURN_USE_CASE.name
     tmp_path = mlflow_test_setup["tmp_path"]

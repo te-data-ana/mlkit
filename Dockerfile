@@ -26,5 +26,5 @@ ENV TRACKING_DIR=/app/tracking
 
 EXPOSE 8000
 
-ENTRYPOINT ["churn-mlops"]
+ENTRYPOINT ["mlkit"]
 CMD ["serve"]

@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 from sklearn.compose import ColumnTransformer
 
-from churn_mlops.models import create_preprocessor
+from mlkit.models import create_preprocessor
 
 
 @pytest.mark.unit

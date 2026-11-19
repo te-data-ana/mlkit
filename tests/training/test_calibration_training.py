@@ -5,7 +5,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC, LinearSVC
 
-from churn_mlops.training.calibration import (
+from mlkit.training.calibration import (
     fit_estimator_with_calibration,
     make_temporal_cv_splits,
 )

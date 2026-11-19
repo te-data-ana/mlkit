@@ -3,10 +3,10 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
-from churn_mlops.serving.prediction_logger import PredictionLogger
-from churn_mlops.serving.predictor import PredictionResult
-from churn_mlops.use_cases import get_use_case
-from churn_mlops.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.serving.prediction_logger import PredictionLogger
+from mlkit.serving.predictor import PredictionResult
+from mlkit.use_cases import get_use_case
+from mlkit.use_cases.churn.serving import ChurnInputFeatures
 
 CHURN_USE_CASE = get_use_case("churn")
 ALTERNATE_USE_CASE = replace(CHURN_USE_CASE, time_column="event_date")

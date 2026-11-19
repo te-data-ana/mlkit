@@ -6,9 +6,9 @@ import pytest
 from matplotlib.figure import Figure
 from sklearn.pipeline import Pipeline
 
-from churn_mlops.models.features import IdentityFeatureBuilder
-from churn_mlops.tracking.registry import ModelRegistry
-from churn_mlops.training import TrainingResult
+from mlkit.models.features import IdentityFeatureBuilder
+from mlkit.tracking.registry import ModelRegistry
+from mlkit.training import TrainingResult
 
 
 @pytest.fixture

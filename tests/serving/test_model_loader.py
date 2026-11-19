@@ -7,9 +7,9 @@ from unittest.mock import Mock
 import pytest
 from sklearn.linear_model import LogisticRegression
 
-from churn_mlops.serving import model_loader
-from churn_mlops.tracking.manifest import LoggedModelReference, TrainingManifest
-from churn_mlops.use_cases import get_use_case
+from mlkit.serving import model_loader
+from mlkit.tracking.manifest import LoggedModelReference, TrainingManifest
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 

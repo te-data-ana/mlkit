@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from churn_mlops.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.use_cases.churn.serving import ChurnInputFeatures
 
 
 def test_churn_input_features_accepts_boundary_values() -> None:

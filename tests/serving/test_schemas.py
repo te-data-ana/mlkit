@@ -3,7 +3,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from churn_mlops.serving.schemas import (
+from mlkit.serving.schemas import (
     PredictionErrorEvent,
     PredictionEvent,
 )

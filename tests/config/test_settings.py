@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from churn_mlops.config import RuntimeSettings
+from mlkit.config import RuntimeSettings
 
 
 @pytest.mark.unit

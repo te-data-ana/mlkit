@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from churn_mlops.data.jsonl_logs import jsonl_log_to_csv, read_jsonl_log
+from mlkit.data.jsonl_logs import jsonl_log_to_csv, read_jsonl_log
 
 
 @pytest.mark.unit

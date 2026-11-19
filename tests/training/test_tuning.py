@@ -7,15 +7,15 @@ import optuna
 import pandas as pd
 import pytest
 
-from churn_mlops.config.schemas import TrainingConfig, TuningConfig
-from churn_mlops.models import MODEL_CATALOG, create_model
-from churn_mlops.training import tuning
-from churn_mlops.training.calibration import make_temporal_cv_splits
-from churn_mlops.training.tuning import (
+from mlkit.config.schemas import TrainingConfig, TuningConfig
+from mlkit.models import MODEL_CATALOG, create_model
+from mlkit.training import tuning
+from mlkit.training.calibration import make_temporal_cv_splits
+from mlkit.training.tuning import (
     _suggest_parameters,
     optimize_hyperparameters,
 )
-from churn_mlops.use_cases import get_use_case
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 

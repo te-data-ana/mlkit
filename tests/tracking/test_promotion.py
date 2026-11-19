@@ -3,7 +3,7 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from churn_mlops.tracking.promotion import PromotionDecision, PromotionService
+from mlkit.tracking.promotion import PromotionDecision, PromotionService
 
 
 @pytest.mark.unit

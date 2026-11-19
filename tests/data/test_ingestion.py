@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from churn_mlops.data import ingestion
-from churn_mlops.data.ingestion import (
+from mlkit.data import ingestion
+from mlkit.data.ingestion import (
     combine_sample_predictions,
     load_raw_data,
     normalize_strings,
 )
-from churn_mlops.use_cases import get_use_case
+from mlkit.use_cases import get_use_case
 
 
 @pytest.mark.unit

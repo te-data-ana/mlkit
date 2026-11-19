@@ -7,11 +7,11 @@ from unittest.mock import ANY, MagicMock
 import pandas as pd
 import pytest
 
-import churn_mlops
-from churn_mlops import train
-from churn_mlops.config.schemas import TrainingConfig, TuningConfig
-from churn_mlops.training import TuningResult
-from churn_mlops.use_cases import get_use_case
+import mlkit
+from mlkit import train
+from mlkit.config.schemas import TrainingConfig, TuningConfig
+from mlkit.training import TuningResult
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 
@@ -38,7 +38,7 @@ def test_training_cli_passes_run_time_options(
     )
     monkeypatch.setattr(train, "run_training_job", training_job)
 
-    churn_mlops.main(
+    mlkit.main(
         [
             "train",
             "--use_case",
@@ -63,7 +63,7 @@ def test_training_cli_passes_run_time_options(
 @pytest.mark.unit
 def test_training_cli_requires_use_case(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit, match="2"):
-        churn_mlops.main(["train", "--config", "lr.yaml"])
+        mlkit.main(["train", "--config", "lr.yaml"])
 
     assert "--use_case" in capsys.readouterr().err
 
@@ -330,7 +330,7 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
     assert train_model_mock.call_args.kwargs["calibration_method"] == "isotonic"
     assert train_model_mock.call_args.kwargs["n_jobs"] == 3
     assert config.calibration.n_splits == 3
-    from churn_mlops.tracking import TrainingManifest
+    from mlkit.tracking import TrainingManifest
 
     manifest = TrainingManifest.read(tmp_path / f"manifests/{run_name}.json")
     assert manifest.model.use_case == use_case
@@ -607,7 +607,7 @@ def test_registration_uses_derived_name_and_only_promotion_aliases(
         registry.set_alias.assert_not_called()
         registry.get_champion_version.assert_not_called()
     assert manifest_file.is_file()
-    from churn_mlops.tracking import TrainingManifest
+    from mlkit.tracking import TrainingManifest
 
     manifest = TrainingManifest.read(manifest_file)
     assert manifest.model.model_name == f"{use_case}-model"

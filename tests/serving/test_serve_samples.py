@@ -10,14 +10,14 @@ import pandas as pd
 import pytest
 import requests
 
-from churn_mlops.config import RuntimeSettings
-from churn_mlops.serving import serve_samples
-from churn_mlops.serving.serve_samples import (
+from mlkit.config import RuntimeSettings
+from mlkit.serving import serve_samples
+from mlkit.serving.serve_samples import (
     configure_model_environment,
     custom_parser,
     main,
 )
-from churn_mlops.use_cases import get_use_case
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 
@@ -471,31 +471,31 @@ def test_main_starts_api_serves_samples_and_stops_server(
     stop_api_server_mock = Mock()
 
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.configure_logging",
+        "mlkit.serving.serve_samples.configure_logging",
         configure_logging_mock,
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.ServingSettings",
+        "mlkit.serving.serve_samples.ServingSettings",
         serving_settings_mock,
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.custom_parser",
+        "mlkit.serving.serve_samples.custom_parser",
         custom_parser_mock,
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.start_api_server",
+        "mlkit.serving.serve_samples.start_api_server",
         start_api_server_mock,
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.wait_for_api",
+        "mlkit.serving.serve_samples.wait_for_api",
         wait_for_api_mock,
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.serve_samples",
+        "mlkit.serving.serve_samples.serve_samples",
         serve_samples_mock,
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.stop_api_server",
+        "mlkit.serving.serve_samples.stop_api_server",
         stop_api_server_mock,
     )
 
@@ -554,33 +554,33 @@ def test_main_stops_server_when_serving_fails(
     parser.parse_args.return_value = args
 
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.configure_logging",
+        "mlkit.serving.serve_samples.configure_logging",
         Mock(),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.ServingSettings",
+        "mlkit.serving.serve_samples.ServingSettings",
         Mock(),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.custom_parser",
+        "mlkit.serving.serve_samples.custom_parser",
         Mock(return_value=parser),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.start_api_server",
+        "mlkit.serving.serve_samples.start_api_server",
         Mock(return_value=mock_process),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.wait_for_api",
+        "mlkit.serving.serve_samples.wait_for_api",
         Mock(),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.serve_samples",
+        "mlkit.serving.serve_samples.serve_samples",
         Mock(side_effect=RuntimeError("boom")),
     )
 
     stop_api_server_mock = Mock()
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.stop_api_server",
+        "mlkit.serving.serve_samples.stop_api_server",
         stop_api_server_mock,
     )
 
@@ -616,15 +616,15 @@ def test_main_rejects_manifest_and_model_version(
     parser.error.side_effect = SystemExit
 
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.custom_parser",
+        "mlkit.serving.serve_samples.custom_parser",
         Mock(return_value=parser),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.ServingSettings",
+        "mlkit.serving.serve_samples.ServingSettings",
         Mock(),
     )
     monkeypatch.setattr(
-        "churn_mlops.serving.serve_samples.configure_logging",
+        "mlkit.serving.serve_samples.configure_logging",
         Mock(),
     )
 

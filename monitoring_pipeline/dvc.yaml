@@ -1,7 +1,7 @@
 stages:
   monitor:
     cmd: >-
-      uv run churn-mlops monitor
+      uv run mlkit monitor
       --use_case ${monitoring.use_case}
       --reference_dataset ${monitoring.reference_dataset}
       --analysis_dataset ${monitoring.analysis_dataset}
@@ -15,7 +15,7 @@ stages:
       - ../data/${monitoring.reference_dataset}
       - ../data/${monitoring.analysis_dataset}
       - ../data/${monitoring.model_manifest}
-      - ../src/churn_mlops
+      - ../src/mlkit
       - ../pyproject.toml
       - ../uv.lock
     params:

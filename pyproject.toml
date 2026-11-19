@@ -1,7 +1,7 @@
 [project]
-name = "churn-mlops"
-version = "0.7.0"
-description = "MLops project based on churn propensity use case, to evolve and demonstrate my ML engineering skills"
+name = "mlkit"
+version = "0.1.0"
+description = "Personal ML engineering and MLOps toolkit for building reusable machine learning solutions and continuously evolving production-grade practices."
 readme = "README.md"
 license = "MIT"
 # fixing to earlier verison, as required packages are not compatible with newer versions
@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-churn-mlops = "churn_mlops:main"
+mlkit = "mlkit:main"
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.14.0"]
@@ -55,7 +55,7 @@ notebooks = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = [
-    "--cov=src/churn_mlops",
+    "--cov=src/mlkit",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]

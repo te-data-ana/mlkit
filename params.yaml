@@ -7,7 +7,7 @@ split:
   end_date: '2026-06-30'
 
 model:
-  classifier: nb
+  classifier: lr
   register_model: true
   promote_model: true
 

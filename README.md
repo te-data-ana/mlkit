@@ -1,4 +1,4 @@
-# Churn MLOps
+# MLkit
 
 A local-first binary-classification MLOps project, with customer churn as its
 included use case. It demonstrates data preparation, time-based evaluation,
@@ -21,7 +21,7 @@ Include the notebook group to run the included analysis notebooks:
 
 ```bash
 uv sync --group notebooks
-uv run churn-mlops --help
+uv run mlkit --help
 ```
 
 Run the test suite:
@@ -47,14 +47,14 @@ training and inference cohorts so the partitioned dataset covers the full
 out-of-time window:
 
 ```bash
-uv run python -m churn_mlops.data.manipulation \
+uv run python -m mlkit.data.manipulation \
   --use_case churn \
   --input_csv customer_churn_dataset-training.csv \
   --output_csv training.csv \
   --start_date 2025-01-01 \
   --end_date 2025-12-01
 
-uv run python -m churn_mlops.data.manipulation \
+uv run python -m mlkit.data.manipulation \
   --use_case churn \
   --input_csv customer_churn_dataset-inference.csv \
   --output_csv inference.csv \
@@ -67,8 +67,8 @@ dataset under `data/partitioned`. The input argument is a filename under
 `data/raw`. Prepare both enriched files:
 
 ```bash
-uv run churn-mlops prepare-data --input_csv training.csv --use_case churn
-uv run churn-mlops prepare-data --input_csv inference.csv --use_case churn
+uv run mlkit prepare-data --input_csv training.csv --use_case churn
+uv run mlkit prepare-data --input_csv inference.csv --use_case churn
 ```
 
 Create train and test files from an inclusive date range. Rows before
@@ -76,7 +76,7 @@ Create train and test files from an inclusive date range. Rows before
 case supplies the timestamp column.
 
 ```bash
-uv run churn-mlops create-split \
+uv run mlkit create-split \
   --dataset_name partitioned \
   --use_case churn \
   --start_date 2025-04-01 \
@@ -186,7 +186,7 @@ configured pipeline, evaluates it on the test split, and logs the run to
 MLflow.
 
 ```bash
-uv run churn-mlops train \
+uv run mlkit train \
   --use_case churn \
   --config rf.yaml \
   --split_name oot-26Q2
@@ -215,7 +215,7 @@ Python callers can set the same per-run options directly. They default to
 - `promote_model=False`.
 
 ```python
-from churn_mlops.train import run_training_job
+from mlkit.train import run_training_job
 
 run_training_job(
     use_case="churn",
@@ -261,7 +261,7 @@ For CSV input, the input filename is resolved under `data/raw` and the output
 is written under `output`:
 
 ```bash
-uv run churn-mlops batch-predict \
+uv run mlkit batch-predict \
   --use_case churn \
   --input_csv inference.csv \
   --output_csv predictions_inference.csv \
@@ -274,7 +274,7 @@ date-only end bound includes that calendar day. Existing output partitions for
 the months in the result are replaced.
 
 ```bash
-uv run churn-mlops batch-predict \
+uv run mlkit batch-predict \
   --use_case churn \
   --input_dataset partitioned \
   --start_date 2026-06-01 \
@@ -291,7 +291,7 @@ To score a specific model version, pass both its registered name and version.
 Alternatively, pass a manifest path relative to `DATA_DIR`:
 
 ```bash
-uv run churn-mlops batch-predict \
+uv run mlkit batch-predict \
   --use_case churn \
   --input_dataset splits/oot-26Q2_test.parquet \
   --output_dataset predictions/rf_oot-26Q2 \
@@ -311,8 +311,8 @@ prevent readiness:
 
 ```bash
 MODEL_NAME=churn-model \
-  uv run churn-mlops serve --use_case churn --host 127.0.0.1 --port 8000 --reload
-uv run churn-mlops serve --use_case churn --model_manifest manifests/churn-lr-oot-26Q2.json
+  uv run mlkit serve --use_case churn --host 127.0.0.1 --port 8000 --reload
+uv run mlkit serve --use_case churn --model_manifest manifests/churn-lr-oot-26Q2.json
 ```
 
 The service loads the selected model once per process. Its
@@ -358,7 +358,7 @@ For sample-based API checks, the helper reads and samples the CSV given by
 writes predictions with the input features to the configured output directory:
 
 ```bash
-uv run python -m churn_mlops.serving.serve_samples \
+uv run python -m mlkit.serving.serve_samples \
   --use_case churn \
   --input_csv inference.csv \
   --model_name churn-model \
@@ -379,7 +379,7 @@ in-sample training predictions.
 Monitor scored CSV files:
 
 ```bash
-uv run churn-mlops monitor \
+uv run mlkit monitor \
   --use_case churn \
   --reference_csv output/predictions_training.csv \
   --analysis_csv output/predictions_inference.csv
@@ -388,7 +388,7 @@ uv run churn-mlops monitor \
 Monitor the configured API prediction and error logs:
 
 ```bash
-uv run churn-mlops monitor \
+uv run mlkit monitor \
   --use_case churn \
   --reference_csv output/predictions_training.csv \
   --api
@@ -401,7 +401,7 @@ and `--error_log`.
 Monitoring can also use already-scored partitioned datasets under `DATA_DIR`:
 
 ```bash
-uv run churn-mlops monitor \
+uv run mlkit monitor \
   --use_case churn \
   --reference_dataset train_predictions \
   --analysis_dataset api_predictions \
@@ -451,8 +451,8 @@ default, these commands read the configured JSONL logs and write to
 `data/api_predictions` and `data/api_errors`:
 
 ```bash
-uv run churn-mlops ingest-prediction-logs --use_case churn
-uv run churn-mlops ingest-error-logs --use_case churn
+uv run mlkit ingest-prediction-logs --use_case churn
+uv run mlkit ingest-error-logs --use_case churn
 ```
 
 Re-ingestion replaces existing partitions for the months represented in the
@@ -462,7 +462,7 @@ dataset or partition timestamp.
 
 ## Use case specifications
 
-Use-case-specific behavior lives under [use_cases](src/churn_mlops/use_cases):
+Use-case-specific behavior lives under [use_cases](src/mlkit/use_cases):
 each use case defines its target and time columns, feature columns, data
 validator, feature-builder factory, and optional HTTP request schema. Shared
 training, batch prediction, API, and monitoring code consumes this contract.
@@ -471,9 +471,9 @@ To add another classification problem:
 
 1. Add a use_case package with its data validator and (when needed) feature
    transformer and Pydantic request schema. Use the shared
-   [identity feature transformer](src/churn_mlops/models/features.py) when no
+   [identity feature transformer](src/mlkit/models/features.py) when no
    domain-specific feature engineering is required.
-2. Register a `UseCase` in [registry.py](src/churn_mlops/use_cases/registry.py),
+2. Register a `UseCase` in [registry.py](src/mlkit/use_cases/registry.py),
    providing its target, time and feature columns, validator, transformer
    factory, and optional request schema.
 3. Add a training YAML with model settings; pass the registered use case
@@ -509,10 +509,10 @@ and `reference_date`. CSV loading normalizes column names; `customerid` can be
 selected as the CSV index.
 
 The churn data contract is validated with Pandera:
-[churn data schema](src/churn_mlops/use_cases/churn/schema.py)
+[churn data schema](src/mlkit/use_cases/churn/schema.py)
 
 Its HTTP request features are validated with Pydantic:
-[churn request schema](src/churn_mlops/use_cases/churn/serving.py).
+[churn request schema](src/mlkit/use_cases/churn/serving.py).
 
 
 ## Model configuration and tracking reference
@@ -548,7 +548,7 @@ The model catalog currently supports:
 | `hgb` | `HistGradientBoostingClassifier` |
 
 Classifier implementations and tuning search spaces are defined in the
-[model catalog](src/churn_mlops/models/catalog.py). The feature pipeline adds
+[model catalog](src/mlkit/models/catalog.py). The feature pipeline adds
 custom feature engineering before preprocessing and classification.
 
 Example training configuration:
@@ -670,7 +670,7 @@ manifests to use the latest schema.
 MLflow runs also include a Markdown model card with model, data, feature,
 evaluation, and promotion details, including calibration method, calibration
 error, optimal threshold, and threshold-selection strategy. See the
-[tracking package](src/churn_mlops/tracking).
+[tracking package](src/mlkit/tracking).
 
 ### MLflow logged artifacts and run metadata
 
@@ -840,7 +840,7 @@ requests.
 ## Repository layout
 
 ```text
-src/churn_mlops/       Application package
+src/mlkit/       Application package
   config/              Runtime and training configuration
   data/                Loading, validation, partitioning, and splitting
   evaluation/          Model metrics

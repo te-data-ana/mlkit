@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from churn_mlops.data import splitting, storage
-from churn_mlops.data.splitting import create_time_based_split
-from churn_mlops.data.storage import write_partitioned_dataset
-from churn_mlops.use_cases import get_use_case
+from mlkit.data import splitting, storage
+from mlkit.data.splitting import create_time_based_split
+from mlkit.data.storage import write_partitioned_dataset
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 

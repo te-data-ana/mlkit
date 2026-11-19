@@ -21,20 +21,20 @@ def test_build_plotly_graph_shows_dependency_direction_and_submodule_colors() ->
     graph = nx.DiGraph()
     graph.add_edges_from(
         [
-            ("churn_mlops.config.loader", "churn_mlops.models.catalog"),
-            ("churn_mlops.models.catalog", "churn_mlops.tracking.registry"),
-            ("churn_mlops.tracking.registry", "churn_mlops.models.catalog"),
-            ("churn_mlops.data.storage", "churn_mlops.data.ingestion"),
+            ("mlkit.config.loader", "mlkit.models.catalog"),
+            ("mlkit.models.catalog", "mlkit.tracking.registry"),
+            ("mlkit.tracking.registry", "mlkit.models.catalog"),
+            ("mlkit.data.storage", "mlkit.data.ingestion"),
         ]
     )
     graph.add_nodes_from(
         [
-            "churn_mlops.data.storage",
-            "churn_mlops.evaluation.metrics",
-            "churn_mlops.monitoring.core",
-            "churn_mlops.serving.api",
-            "churn_mlops.training.tuning",
-            "churn_mlops.train",
+            "mlkit.data.storage",
+            "mlkit.evaluation.metrics",
+            "mlkit.monitoring.core",
+            "mlkit.serving.api",
+            "mlkit.training.tuning",
+            "mlkit.train",
         ]
     )
 
@@ -77,10 +77,10 @@ def test_build_plotly_dependency_matrix_counts_directional_module_dependencies()
     graph = nx.DiGraph()
     graph.add_edges_from(
         [
-            ("churn_mlops.config.loader", "churn_mlops.data.ingestion"),
-            ("churn_mlops.data.storage", "churn_mlops.data.ingestion"),
-            ("churn_mlops.models.catalog", "churn_mlops.tracking.registry"),
-            ("churn_mlops.tracking.registry", "churn_mlops.models.catalog"),
+            ("mlkit.config.loader", "mlkit.data.ingestion"),
+            ("mlkit.data.storage", "mlkit.data.ingestion"),
+            ("mlkit.models.catalog", "mlkit.tracking.registry"),
+            ("mlkit.tracking.registry", "mlkit.models.catalog"),
         ]
     )
 
@@ -103,8 +103,8 @@ def test_build_plotly_dependency_matrix_counts_directional_module_dependencies()
 
 def test_dependency_matrix_preserves_repeated_import_occurrences() -> None:
     graph = nx.MultiDiGraph()
-    graph.add_edge("churn_mlops.models.pipeline", "churn_mlops.data.schema")
-    graph.add_edge("churn_mlops.models.pipeline", "churn_mlops.data.schema")
+    graph.add_edge("mlkit.models.pipeline", "mlkit.data.schema")
+    graph.add_edge("mlkit.models.pipeline", "mlkit.data.schema")
 
     figure = build_plotly_dependency_matrix(graph)
 
@@ -135,7 +135,7 @@ def test_write_dependency_visualizations_creates_and_uses_output_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph = nx.DiGraph([("churn_mlops.config.loader", "churn_mlops.data.ingestion")])
+    graph = nx.DiGraph([("mlkit.config.loader", "mlkit.data.ingestion")])
     graph_figure = build_plotly_graph(graph)
     matrix_figure = build_plotly_dependency_matrix(graph)
     written_paths: list[Path] = []

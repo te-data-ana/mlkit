@@ -2,8 +2,8 @@ import pandas as pd
 import pytest
 from pandera.errors import SchemaError, SchemaErrors
 
-from churn_mlops.data import load_raw_data, validate_data
-from churn_mlops.use_cases import get_use_case
+from mlkit.data import load_raw_data, validate_data
+from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 
