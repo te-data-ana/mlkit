@@ -9,7 +9,7 @@ from mlkit.config import ServingSettings
 from mlkit.serving.prediction_logger import PredictionLogger
 from mlkit.serving.predictor import PredictionResult
 from mlkit.use_cases import get_use_case
-from mlkit.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.use_cases.churn.schema import ChurnInputFeatures
 
 CHURN_USE_CASE = get_use_case("churn")
 ALTERNATE_USE_CASE = replace(CHURN_USE_CASE, time_column="event_date")

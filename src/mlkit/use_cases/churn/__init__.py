@@ -1,5 +1,4 @@
 from .features import ChurnFeatureBuilder
-from .schema import ChurnDataSchema
-from .serving import ChurnInputFeatures
+from .schema import ChurnInputFeatures
 
-__all__ = ["ChurnDataSchema", "ChurnFeatureBuilder", "ChurnInputFeatures"]
+__all__ = ["ChurnFeatureBuilder", "ChurnInputFeatures"]

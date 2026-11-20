@@ -9,6 +9,7 @@ import pytest
 from matplotlib.figure import Figure
 from mlflow import MlflowClient
 from mlflow.exceptions import MlflowException
+from pydantic import BaseModel
 from sklearn.calibration import CalibratedClassifierCV
 
 import mlkit.tracking.mlflow as tracking
@@ -153,13 +154,15 @@ def test_log_experiment_result_trusts_selected_use_case_feature_builder(
     mock_training_result: TrainingResult,
     config_factory: Callable[..., TrainingConfig],
 ) -> None:
+    class InputFeatures(BaseModel):
+        value: float
+
     feature_builder_factory = MagicMock(return_value=IdentityFeatureBuilder())
     use_case = UseCase(
         name="alternate",
         target_column="label",
         time_column="event_date",
-        feature_columns=("value",),
-        data_validator=lambda frame: frame,
+        feature_schema=InputFeatures,
         feature_builder_factory=feature_builder_factory,
     )
     config = config_factory()

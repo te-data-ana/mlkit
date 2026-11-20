@@ -18,7 +18,8 @@ def validate_data(df: pd.DataFrame, use_case: UseCase) -> pd.DataFrame:
         The validated and type-coerced DataFrame.
 
     Raises:
-        pandera.errors.SchemaError: If the DataFrame violates the schema.
+        pydantic.ValidationError: If a record violates the schema.
+        ValueError: If required feature columns are missing or columns repeat.
     """
     try:
         logger.info("Validating data schema for %d rows.", len(df))

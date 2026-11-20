@@ -45,7 +45,8 @@ def load_and_validate_training_splits(
 
     Raises:
         FileNotFoundError: If either split file does not exist.
-        pandera.errors.SchemaError: If either split violates the data schema.
+        pydantic.ValidationError: If a record in either split violates the schema.
+        ValueError: If required feature columns are missing or columns repeat.
     """
     resolved_split_dir = (
         split_dir

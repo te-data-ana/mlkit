@@ -199,11 +199,16 @@ search parameters.
 
 Run-time arguments control calibration method, CPU job budget and whether
 tuning, model registration and promotion is executed. The latter options
-are disabled by default. The required `--use_case` selects the data contract.
-Training derives its experiment name from the use case and split, and its
-registry model name from the use case. The selected use case's
-`feature_columns` define model inputs and must be present in both splits;
-other validated columns remain available in batch prediction outputs. See the
+are disabled by default. The required `--use_case` selects the data contract,
+with model input `feature_columns` derived from its
+[Pydantic feature schema](#pydantic-feature-schema). Required
+features must be present in both training and test split.
+
+Training experiment names are derived from use case and split name, registry
+model names from the use case.
+
+See [use case specifications](#use-case-specifications) for how to define a
+use case and
 [model configuration and tracking reference](#model-configuration-and-tracking-reference)
 for configuration details and model behavior.
 
@@ -463,28 +468,39 @@ dataset or partition timestamp.
 ## Use case specifications
 
 Use-case-specific behavior lives under [use_cases](src/mlkit/use_cases):
-each use case defines its target and time columns, feature columns, data
-validator, feature-builder factory, and optional HTTP request schema. Shared
-training, batch prediction, API, and monitoring code consumes this contract.
+each use case defines its `target_column`, `time_column` and `feature_schema`,
+as well as optional feature-engineering (`feature_builder_factory`),
+`index_column` and optional `metadata_fields`, which map additional retained
+column names to Pydantic-compatible types. Shared training, batch prediction,
+API, and monitoring code consumes this data contract.
 
-To add another classification problem:
+To add another use case:
 
-1. Add a use_case package with its data validator and (when needed) feature
-   transformer and Pydantic request schema. Use the shared
+1. Add a use_case package with its Pydantic feature schema and a feature
+   engineering transformer. Use the shared
    [identity feature transformer](src/mlkit/models/features.py) when no
    domain-specific feature engineering is required.
 2. Register a `UseCase` in [registry.py](src/mlkit/use_cases/registry.py),
-   providing its target, time and feature columns, validator, transformer
-   factory, and optional request schema.
+   providing its target, time and feature columns, and the choosen feature
+   transformer.
 3. Add a training YAML with model settings; pass the registered use case
    explicitly when invoking training.
 4. Select the use case explicitly with `--use_case` for data preparation,
    batch prediction, monitoring, serving, and API log ingestion. Dataset and
    API log timestamps use the selected use case's time column.
 
-Training configurations are not substitutes for input validation or HTTP
-schemas: each use case owns those contracts. Retrain models after changing
-use_case feature logic.
+Training configurations are not substitutes for schema based input validation:
+each use case owns its own data contract. Models need re-training after
+changing use_case feature logic.
+
+### Pydantic feature schema
+
+A use-case-specific feature schema validates DataFrames at existing pipeline
+boundaries and requests to the prediction API. Other optional columns (e.g.
+target and time) are validated separately when present; use cases may declare
+additional metadata fields such as IDs. Unknown DataFrame columns are
+filtered, while recognized columns remain available. Pydantic coercion applies.
+Direct calls to training, tuning, and predictor methods expect validated input.
 
 ### Data contract for churn use case
 
@@ -508,11 +524,8 @@ For this churn use case, training data also requires a binary `churn` target
 and `reference_date`. CSV loading normalizes column names; `customerid` can be
 selected as the CSV index.
 
-The churn data contract is validated with Pandera:
-[churn data schema](src/mlkit/use_cases/churn/schema.py)
-
-Its HTTP request features are validated with Pydantic:
-[churn request schema](src/mlkit/use_cases/churn/serving.py).
+The churn data contract is validated with Pydantic, see
+[churn feature schema](src/mlkit/use_cases/churn/schema.py).
 
 
 ## Model configuration and tracking reference

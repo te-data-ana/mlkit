@@ -87,7 +87,8 @@ def preprocess_raw_data(
         Path: Path to the generated output CSV file.
 
     Raises:
-        pandera.errors.SchemaError: If the input data fails validation.
+        pydantic.ValidationError: If a record fails validation.
+        ValueError: If required feature columns are missing or columns repeat.
     """
 
     resolved_data_dir = (

@@ -4,9 +4,12 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from mlkit.data import validate_data
 from mlkit.serving import api, model_loader
 from mlkit.serving.model_loader import LoadedModel, load_model
 from mlkit.serving.prediction_logger import PredictionLogger
@@ -295,6 +298,40 @@ def test_predict_endpoint_rejects_invalid_features(client: TestClient) -> None:
     response = client.post("/predict", json={"age": 45, "gender": "XY"})
 
     assert response.status_code == 422
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field", "value", "valid"),
+    [
+        ("age", 18, True),
+        ("age", "115", True),
+        ("age", 17, False),
+        ("age", 18.5, False),
+        ("tenure", -1, False),
+        ("gender", "invalid", False),
+        ("total_spend", None, False),
+    ],
+)
+def test_dataframe_and_api_share_feature_validation(
+    client: TestClient,
+    sample_dict: dict[str, Any],
+    field: str,
+    value: Any,
+    valid: bool,
+) -> None:
+    payload = sample_dict | {field: value}
+    response = client.post("/predict", json=payload)
+    assert response.status_code == (200 if valid else 422)
+    if valid:
+        result = validate_data(df=pd.DataFrame([payload]), use_case=CHURN_USE_CASE)
+        assert (
+            result.iloc[0][field]
+            == CHURN_USE_CASE.feature_schema(**payload).model_dump()[field]
+        )
+    else:
+        with pytest.raises(ValidationError):
+            validate_data(pd.DataFrame([payload]), CHURN_USE_CASE)
 
 
 @pytest.mark.integration

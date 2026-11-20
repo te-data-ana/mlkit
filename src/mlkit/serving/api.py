@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 
 def create_app(use_case: UseCase) -> FastAPI:
     """Create an API application for an explicitly selected use case."""
-    request_model = use_case.request_schema
-    if request_model is None:
-        raise ValueError(f"Use case '{use_case.name}' does not define an API schema.")
+    request_model = use_case.feature_schema
     response_model = prediction_response_schema(time_column=use_case.time_column)
 
     @asynccontextmanager

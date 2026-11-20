@@ -17,7 +17,7 @@ dependencies = [
     "optuna>=5.0.0",
     # NannyML 0.13.1 passes inplace=False, deprecated in pandas 3.1.
     "pandas>=3.0.5,<3.1",
-    "pandera>=0.33.1",
+    "pydantic>=2.0",
     "pydantic-settings>=2.15.0",
     "scikit-learn>=1.9.0",
     # MLflow 3.18 uses SQLAlchemy's noload strategy, deprecated in 2.1.
@@ -35,6 +35,9 @@ requires = ["uv_build>=0.12.10,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+datasets = [
+    "ucimlrepo>=0.0.7",
+]
 dev = [
     "detect-secrets>=1.5.0",
     "dvc>=3.67.1",
@@ -47,6 +50,7 @@ dev = [
     "ruff>=0.16.6",
 ]
 notebooks = [
+    "ipykernel>=7.4.0",
     "jupyter>=1.1.1",
     "jupyterlab>=4.6.3",
     "seaborn>=0.13.2",

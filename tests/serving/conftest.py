@@ -16,7 +16,7 @@ from mlkit.serving.schemas import (
     PredictionEvent,
 )
 from mlkit.use_cases import get_use_case
-from mlkit.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.use_cases.churn.schema import ChurnInputFeatures
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def client(
     mock_model_factory: Callable[..., LoadedModel],
 ) -> Generator[Any, Any, Any]:
     monkeypatch.setattr(api, "load_model", lambda **_: mock_model_factory())
-    with TestClient(api.create_app(get_use_case("churn"))) as test_client:
+    with TestClient(api.create_app(use_case=get_use_case("churn"))) as test_client:
         yield test_client
 
 

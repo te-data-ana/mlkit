@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from pydantic import BaseModel
 
 from mlkit.data.manipulation import (
     assign_split_values,
@@ -113,13 +114,15 @@ def test_preprocess_raw_data_uses_selected_use_case_time_column(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    class InputFeatures(BaseModel):
+        value: int
+
     use_case = UseCase(
         name="alternate",
         target_column="label",
         time_column="event_date",
-        feature_columns=("value",),
-        data_validator=lambda frame: frame,
-        feature_builder_factory=lambda _: IdentityFeatureBuilder(),
+        feature_schema=InputFeatures,
+        feature_builder_factory=IdentityFeatureBuilder,
     )
     monkeypatch.setattr(
         "mlkit.data.manipulation.load_raw_data",

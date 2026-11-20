@@ -85,7 +85,7 @@ def run_training_job(
     Raises:
         FileNotFoundError: If the configuration or training data file is not
             found.
-        pandera.errors.SchemaError: If the training data violates its schema.
+        pydantic.ValidationError: If a training record violates its schema.
         TypeError: If run-time boolean options are not booleans.
         ValueError: If a run-time training option, classifier, or promotion
             operation is invalid.
