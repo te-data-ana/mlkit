@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from mlkit import batch_predict
 from mlkit.models import IdentityFeatureBuilder
@@ -22,24 +22,14 @@ class AlternateInput(BaseModel):
     category: str
 
 
-def _validate_alternate_data(df: pd.DataFrame) -> pd.DataFrame:
-    required = {"amount", "category"}
-    missing = required.difference(df.columns)
-    if missing:
-        raise ValueError(f"Missing alternate-use-case columns: {sorted(missing)}")
-    if "label" in df and not df["label"].dropna().isin([0, 1]).all():
-        raise ValueError("The alternate target must contain binary labels.")
-    return df.copy()
-
-
 ALTERNATE_USE_CASE = UseCase(
     name="alternate",
     target_column="label",
     time_column="event_date",
-    feature_columns=("amount", "category"),
-    data_validator=_validate_alternate_data,
+    feature_schema=AlternateInput,
     feature_builder_factory=IdentityFeatureBuilder,
-    request_schema=AlternateInput,
+    index_column="record_id",
+    metadata_fields={"record_id": int},
 )
 
 
@@ -48,7 +38,7 @@ def _alternate_df(rows: int = 12) -> pd.DataFrame:
         {
             "amount": np.arange(rows, dtype=float),
             "category": ["even" if row % 2 == 0 else "odd" for row in range(rows)],
-            "customer_id": range(rows),
+            "record_id": range(rows),
             "label": [row % 2 for row in range(rows)],
             "event_date": pd.date_range("2026-01-01", periods=rows),
         }
@@ -87,7 +77,7 @@ def test_alternate_use_case_runs_training_batch_api_and_monitoring(
         use_case=ALTERNATE_USE_CASE,
     )
     assert scored["predicted_probability"].between(0, 1).all()
-    assert scored["customer_id"].tolist() == df["customer_id"].tolist()
+    assert scored["record_id"].tolist() == df["record_id"].tolist()
 
     api_settings = SimpleNamespace(
         model_manifest=None,
@@ -166,7 +156,6 @@ def test_use_case_rejects_target_and_time_as_features(
             name="invalid",
             target_column="label",
             time_column="event_date",
-            feature_columns=("amount", feature_column),
-            data_validator=_validate_alternate_data,
-            feature_builder_factory=lambda _: IdentityFeatureBuilder(),
+            feature_schema=create_model("InvalidInput", **{feature_column: (int, ...)}),
+            feature_builder_factory=IdentityFeatureBuilder,
         )

@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import requests
 
-from mlkit.config import RuntimeSettings
+from mlkit.config import RuntimeSettings, ServingSettings
 from mlkit.serving import serve_samples
 from mlkit.serving.serve_samples import (
     configure_model_environment,
@@ -210,8 +210,7 @@ def test_predict_samples_supports_alternate_use_case_time_column(
 def test_save_predictions_writes_csv(
     tmp_path: Path,
 ) -> None:
-    settings = RuntimeSettings()
-    settings.output_dir = tmp_path
+    settings = RuntimeSettings(output_dir=tmp_path)
 
     df = pd.DataFrame({"prediction": [0, 1]})
 
@@ -230,12 +229,20 @@ def test_save_predictions_writes_csv(
 
 
 @pytest.mark.unit
+def test_sample_client_rejects_ephemeral_port() -> None:
+    settings = ServingSettings(api_port=0)
+    with pytest.raises(ValueError, match="nonzero"):
+        serve_samples.predict_samples(
+            use_case=CHURN_USE_CASE, df=pd.DataFrame(), settings=settings
+        )
+
+
+@pytest.mark.unit
 def test_serve_samples_calls_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    settings = RuntimeSettings()
-    settings.output_dir = tmp_path
+    settings = RuntimeSettings(output_dir=tmp_path)
 
     sample_df = pd.DataFrame({"age": [42]})
     prediction_df = pd.DataFrame(
@@ -417,6 +424,21 @@ def test_configure_model_environment_from_manifest(
 
 
 @pytest.mark.unit
+def test_configure_model_environment_from_manifest_without_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("MODEL_MANIFEST", raising=False)
+    args = Namespace(
+        model_manifest=Path("manifest.json"), model_name=None, model_version=None
+    )
+
+    configure_model_environment(args=args)
+
+    assert os.environ["MODEL_MANIFEST"] == str(tmp_path / "manifest.json")
+
+
+@pytest.mark.unit
 def test_configure_model_environment_from_model_name_version(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -442,6 +464,8 @@ def test_main_starts_api_serves_samples_and_stops_server(
     """Test that main orchestrates API startup, serving, and shutdown."""
 
     mock_settings = Mock()
+    mock_settings.api_host = "localhost"
+    mock_settings.api_port = 8000
     mock_process = Mock()
 
     args = Namespace(
@@ -502,7 +526,7 @@ def test_main_starts_api_serves_samples_and_stops_server(
     main()
 
     configure_logging_mock.assert_called_once()
-    custom_parser_mock.assert_called_once_with(settings=mock_settings)
+    custom_parser_mock.assert_called_once_with()
 
     start_api_server_mock.assert_called_once_with(
         host="localhost",
@@ -525,6 +549,41 @@ def test_main_starts_api_serves_samples_and_stops_server(
     )
 
     stop_api_server_mock.assert_called_once_with(mock_process)
+
+
+@pytest.mark.unit
+def test_main_uses_cli_connection_overrides_for_server_and_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("API_PORT", "invalid")
+    monkeypatch.delenv("USE_CASE", raising=False)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "serve_samples",
+            "--use_case",
+            "churn",
+            "--input_csv",
+            "input.csv",
+            "--host",
+            "localhost",
+            "--port",
+            "9123",
+        ],
+    )
+    start = Mock()
+    serve = Mock()
+    monkeypatch.setattr(serve_samples, "start_api_server", start)
+    monkeypatch.setattr(serve_samples, "wait_for_api", Mock())
+    monkeypatch.setattr(serve_samples, "stop_api_server", Mock())
+    monkeypatch.setattr(serve_samples, "serve_samples", serve)
+
+    main()
+
+    start.assert_called_once_with(host="localhost", port=9123)
+    settings = serve.call_args.kwargs["settings"]
+    assert settings.api_host == "localhost"
+    assert settings.api_port == 9123
 
 
 @pytest.mark.unit

@@ -31,6 +31,8 @@ def load_model(
     model_alias: str | None = None,
     model_version: int | None = None,
     manifest: TrainingManifest | None = None,
+    *,
+    settings: ServingSettings | None = None,
 ) -> LoadedModel:
     """Load a configured or manifest-identified model and its metadata.
 
@@ -41,6 +43,7 @@ def load_model(
         model_alias: Optional registered model alias.
         model_version: Optional registered model version number.
         manifest: Optional training manifest identifying an exact model.
+        settings: Serving snapshot used for unspecified values.
 
     Returns:
         Loaded model (trained estimator/pipeline) together with its
@@ -62,14 +65,18 @@ def load_model(
             f"'{use_case.name}' was supplied."
         )
 
-    settings = ServingSettings()
-    tracking_uri = tracking_uri or settings.mlflow_tracking_uri
+    settings = settings or ServingSettings()
+    tracking_uri = (
+        tracking_uri if tracking_uri is not None else settings.mlflow_tracking_uri
+    )
     if tracking_uri:
         mlflow.set_tracking_uri(tracking_uri)
 
-    model_name = model_name or settings.model_name
-    model_alias = model_alias or settings.model_alias
-    model_version = model_version or settings.model_version
+    model_name = model_name if model_name is not None else settings.model_name
+    model_alias = model_alias if model_alias is not None else settings.model_alias
+    model_version = (
+        model_version if model_version is not None else settings.model_version
+    )
     if manifest is None and model_name is None:
         raise ValueError(
             "Provide a model manifest or set MODEL_NAME to a registered model name."

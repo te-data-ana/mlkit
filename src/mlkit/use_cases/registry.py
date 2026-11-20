@@ -1,6 +1,5 @@
 from mlkit.use_cases.base import UseCase
 from mlkit.use_cases.churn import (
-    ChurnDataSchema,
     ChurnFeatureBuilder,
     ChurnInputFeatures,
 )
@@ -9,11 +8,10 @@ CHURN_USE_CASE = UseCase(
     name="churn",
     target_column="churn",
     time_column="reference_date",
-    feature_columns=tuple(ChurnInputFeatures.model_fields),
-    data_validator=ChurnDataSchema.validate,
+    feature_schema=ChurnInputFeatures,
     feature_builder_factory=ChurnFeatureBuilder,
-    request_schema=ChurnInputFeatures,
     index_column="customerid",
+    metadata_fields={"customerid": int},
 )
 
 USE_CASES = {CHURN_USE_CASE.name: CHURN_USE_CASE}

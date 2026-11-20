@@ -57,6 +57,7 @@ def preprocess_raw_data(
     *,
     use_case: UseCase,
     data_dir: Path | None = None,
+    settings: RuntimeSettings | None = None,
 ) -> Path:
     """Pre-process raw data and store the result as a CSV file.
 
@@ -80,16 +81,21 @@ def preprocess_raw_data(
         data_dir: Directory containing the input file and where the output
             file will be written. If ``None``, the raw data directory from
             :class:`RuntimeSettings` is used.
+        settings: Runtime snapshot used when no data directory is supplied.
 
     Returns:
         Path: Path to the generated output CSV file.
 
     Raises:
-        pandera.errors.SchemaError: If the input data fails validation.
+        pydantic.ValidationError: If a record fails validation.
+        ValueError: If required feature columns are missing or columns repeat.
     """
 
-    settings = RuntimeSettings()
-    resolved_data_dir = data_dir or settings.data_dir / "raw"
+    resolved_data_dir = (
+        data_dir
+        if data_dir is not None
+        else (settings or RuntimeSettings()).data_dir / "raw"
+    )
 
     df = load_raw_data(
         file_name=input_csv,

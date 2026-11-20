@@ -17,12 +17,15 @@ from mlkit.config.settings import RuntimeSettings
 def load_config(
     file: str,
     path: Path | None = None,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> tuple[TrainingConfig, Path]:
     """Load a YAML training configuration into typed dataclasses.
 
     Args:
         file: Configuration filename.
         path: Directory containing the configuration file.
+        settings: Runtime snapshot used when no path is supplied.
 
     Returns:
         A tuple containing the parsed ``TrainingConfig`` and the configuration
@@ -33,8 +36,9 @@ def load_config(
         KeyError: If a required configuration section is missing.
         yaml.YAMLError: If the file contains invalid YAML.
     """
-    settings = RuntimeSettings()
-    resolved_path = path or settings.config_dir
+    resolved_path = (
+        path if path is not None else (settings or RuntimeSettings()).config_dir
+    )
 
     config_file_path = resolved_path / file
     with open(config_file_path) as f:

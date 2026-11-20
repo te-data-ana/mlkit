@@ -47,6 +47,18 @@ def test_load_raw_data_drops_normalized_columns(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_explicit_data_dir_does_not_read_unrelated_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("API_PORT", "invalid")
+    (tmp_path / "source.csv").write_text("value\n42\n")
+
+    df = load_raw_data("source.csv", data_dir=tmp_path)
+
+    assert df["value"].tolist() == [42]
+
+
+@pytest.mark.unit
 def test_combine_sample_predictions_adds_run_id(tmp_path: Path) -> None:
     df1 = pd.DataFrame({"prediction": [0, 1]})
     df2 = pd.DataFrame({"prediction": [1]})
@@ -166,14 +178,17 @@ def test_log_ingestion_wrappers_use_configured_paths(
         dataset_name: str,
         timestamp_column: str,
         jsonl_path: Path,
+        *,
+        settings: object,
     ) -> None:
         observed.update(
             dataset_name=dataset_name,
             timestamp_column=timestamp_column,
             jsonl_path=jsonl_path,
+            settings=settings,
         )
 
-    monkeypatch.setattr(ingestion, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(ingestion, "RuntimeSettings", lambda: settings)
     monkeypatch.setattr(ingestion, "ingest_jsonl_log", fake_ingest_jsonl_log)
 
     ingest_function = getattr(ingestion, function_name)
@@ -183,6 +198,7 @@ def test_log_ingestion_wrappers_use_configured_paths(
         "dataset_name": dataset_name,
         "timestamp_column": "reference_date",
         "jsonl_path": getattr(settings, log_path_attribute),
+        "settings": settings,
     }
 
 
@@ -196,7 +212,7 @@ def test_ingest_sample_data_validates_and_writes_dataset(
     monkeypatch.setattr(
         ingestion,
         "combine_sample_predictions",
-        lambda: sample_data,
+        lambda **kwargs: sample_data,
     )
 
     def fake_validate_data(df: pd.DataFrame, use_case: object) -> pd.DataFrame:

@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 
 def create_app(use_case: UseCase) -> FastAPI:
     """Create an API application for an explicitly selected use case."""
-    request_model = use_case.request_schema
-    if request_model is None:
-        raise ValueError(f"Use case '{use_case.name}' does not define an API schema.")
+    request_model = use_case.feature_schema
     response_model = prediction_response_schema(time_column=use_case.time_column)
 
     @asynccontextmanager
@@ -39,21 +37,14 @@ def create_app(use_case: UseCase) -> FastAPI:
         application.state.settings = settings
 
         try:
-            if settings.model_manifest is not None:
-                manifest = TrainingManifest.read(settings.model_manifest)
-                application.state.predictor = Predictor(
-                    load_model(use_case=use_case, manifest=manifest)
-                )
-            elif settings.model_version is None:
-                application.state.predictor = Predictor(load_model(use_case=use_case))
-            else:
-                application.state.predictor = Predictor(
-                    load_model(
-                        use_case=use_case,
-                        model_name=settings.model_name,
-                        model_version=settings.model_version,
-                    )
-                )
+            manifest = (
+                TrainingManifest.read(settings.model_manifest)
+                if settings.model_manifest is not None
+                else None
+            )
+            application.state.predictor = Predictor(
+                load_model(use_case=use_case, manifest=manifest, settings=settings)
+            )
 
             application.state.prediction_logger = PredictionLogger(
                 prediction_log_path=settings.prediction_log_path,
@@ -71,11 +62,7 @@ def create_app(use_case: UseCase) -> FastAPI:
 
     @application.middleware("http")
     async def add_request_id(request: Request, call_next):
-        request_id_header = getattr(
-            request.app.state,
-            "settings",
-            ServingSettings(),
-        ).request_id_header
+        request_id_header = request.app.state.settings.request_id_header
         request_id = request.headers.get(
             key=request_id_header,
             default=str(uuid4()),

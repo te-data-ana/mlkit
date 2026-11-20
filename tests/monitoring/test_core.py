@@ -530,17 +530,20 @@ def test_log_monitoring_run_logs_tags_and_artifact(
     monkeypatch.setattr(core.mlflow, "log_artifact", log_artifact)
     monkeypatch.setattr(core.mlflow, "log_metrics", log_metrics)
 
+    settings = core.RuntimeSettings(artifact_dir=tmp_path)
     core.log_monitoring_run(
         report,
         experiment_name="churn-monitoring",
         run_name="rf__followup",
         tags={"model_name": "churn-risk", "model_version": 7},
         tracking_uri="sqlite:///tracking.db",
+        settings=settings,
     )
 
     setup_experiment.assert_called_once_with(
         experiment_name="churn-monitoring",
         tracking_uri="sqlite:///tracking.db",
+        settings=settings,
     )
     set_tags.assert_called_once_with({"model_name": "churn-risk", "model_version": 7})
     log_artifact.assert_called_once_with(

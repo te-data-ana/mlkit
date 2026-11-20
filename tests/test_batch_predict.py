@@ -1,7 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pandas as pd
 import pytest
@@ -66,6 +66,7 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
         model_name=None,
         model_version=None,
         manifest=None,
+        settings=settings,
     )
 
     output_path = tmp_path / "predictions.csv"
@@ -105,6 +106,7 @@ def test_run_batch_prediction_validates_and_returns_prediction_dataframe(
         model_alias=None,
         model_version=None,
         manifest=None,
+        settings=None,
     )
     predictor.predict_batch.assert_called_once_with(df=validated_df)
     pd.testing.assert_frame_equal(result, prediction_df)
@@ -139,6 +141,7 @@ def test_run_batch_prediction_uses_exact_model_version(
         model_alias=None,
         model_version=8,
         manifest=None,
+        settings=None,
     )
 
 
@@ -174,6 +177,7 @@ def test_run_batch_prediction_uses_manifest(
         model_alias=None,
         model_version=None,
         manifest=manifest,
+        settings=None,
     )
 
 
@@ -221,6 +225,7 @@ def test_batch_predict_cli_reads_model_manifest(
         model_name=None,
         model_version=None,
         manifest=manifest,
+        settings=settings,
     )
 
 
@@ -272,6 +277,7 @@ def test_batch_predict_cli_reads_unregistered_model_manifest(
         model_name=None,
         model_version=None,
         manifest=manifest,
+        settings=settings,
     )
 
 
@@ -339,6 +345,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
         timestamp_column="reference_date",
         start="2026-02-01",
         end="2026-02-28",
+        settings=ANY,
     )
     predict.assert_called_once_with(
         df=input_df,
@@ -346,12 +353,14 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
         model_name=None,
         model_version=None,
         manifest=None,
+        settings=ANY,
     )
     write_dataset.assert_called_once_with(
         df=prediction_df,
         dataset_name="batch_predictions",
         timestamp_column="reference_date",
         overwrite_partitions=True,
+        settings=ANY,
     )
 
 

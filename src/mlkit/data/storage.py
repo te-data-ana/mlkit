@@ -20,6 +20,8 @@ def write_partitioned_dataset(
     dataset_name: str,
     timestamp_column: str,
     overwrite_partitions: bool = False,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> None:
     """
     Write a DataFrame as a year/month partitioned Parquet dataset.
@@ -49,6 +51,7 @@ def write_partitioned_dataset(
         overwrite_partitions:
             Whether to replace existing year/month partitions before
             writing new data. Defaults to ``True``.
+        settings: Runtime snapshot used to locate the dataset.
 
     Returns:
         None.
@@ -64,7 +67,7 @@ def write_partitioned_dataset(
     df["year"] = df[timestamp_column].dt.year
     df["month"] = df[timestamp_column].dt.month
 
-    settings = RuntimeSettings()
+    settings = settings or RuntimeSettings()
     dataset_dir = settings.data_dir / dataset_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
@@ -134,6 +137,8 @@ def read_partitioned_dataset(
     timestamp_column: str,
     start: str | pd.Timestamp | None = None,
     end: str | pd.Timestamp | None = None,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> pd.DataFrame:
     """
     Read rows from a partitioned Parquet dataset.
@@ -166,6 +171,7 @@ def read_partitioned_dataset(
             string includes that entire calendar day. Must be provided
             together with ``start``. If both ``start`` and ``end`` are
             ``None``, the entire dataset is loaded. Defaults to ``None``.
+        settings: Runtime snapshot used to locate the dataset.
 
     Returns:
         A DataFrame containing either:
@@ -182,7 +188,7 @@ def read_partitioned_dataset(
             ``start`` is later than ``end``.
     """
 
-    settings = RuntimeSettings()
+    settings = settings or RuntimeSettings()
     dataset_dir = settings.data_dir / dataset_name
 
     if not dataset_dir.exists():

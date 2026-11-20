@@ -28,6 +28,7 @@ def load_and_validate_training_splits(
     split_dir: Path | None = None,
     *,
     use_case: UseCase,
+    settings: RuntimeSettings | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load and validate the prepared train and test Parquet files.
 
@@ -36,6 +37,7 @@ def load_and_validate_training_splits(
         split_dir: Directory containing the split files. Defaults to the
             configured ``data/splits`` directory.
         use_case: Explicit schema and time-column contract for validation.
+        settings: Runtime snapshot used when no split directory is supplied.
 
     Returns:
         Validated training and test DataFrames, retaining the use-case time
@@ -43,10 +45,14 @@ def load_and_validate_training_splits(
 
     Raises:
         FileNotFoundError: If either split file does not exist.
-        pandera.errors.SchemaError: If either split violates the data schema.
+        pydantic.ValidationError: If a record in either split violates the schema.
+        ValueError: If required feature columns are missing or columns repeat.
     """
-    settings = RuntimeSettings()
-    resolved_split_dir = split_dir or settings.data_dir / "splits"
+    resolved_split_dir = (
+        split_dir
+        if split_dir is not None
+        else (settings or RuntimeSettings()).data_dir / "splits"
+    )
     split_data: dict[str, pd.DataFrame] = {}
 
     for split in ("train", "test"):
@@ -67,6 +73,8 @@ def create_time_based_split(
     end_date: str | pd.Timestamp,
     split_name: str = "default",
     json_metadata: bool = True,
+    *,
+    settings: RuntimeSettings | None = None,
 ) -> SplitMetadata:
     """
     Create train and test datasets using an out-of-time split and
@@ -97,6 +105,7 @@ def create_time_based_split(
             Prefix used for the generated split filenames.
         json_metadata:
             If split metadata should be persisted to JSON file.
+        settings: Runtime snapshot used for input and output locations.
 
     Returns:
         Metadata describing the generated split, including row counts
@@ -124,11 +133,13 @@ def create_time_based_split(
         msg = "'split_date' must be before or equal to 'end_date'."
         raise ValueError(msg)
 
+    settings = settings or RuntimeSettings()
     df = read_partitioned_dataset(
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,
         start=start_date,
         end=end_date,
+        settings=settings,
     )
 
     train = df.loc[df[timestamp_column] < split_date].reset_index(drop=True)
@@ -142,8 +153,6 @@ def create_time_based_split(
     if test.empty:
         msg = "Test split is empty."
         raise ValueError(msg)
-
-    settings = RuntimeSettings()
 
     output_dir = settings.data_dir / "splits"
     output_dir.mkdir(parents=True, exist_ok=True)

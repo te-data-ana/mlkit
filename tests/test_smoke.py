@@ -1,7 +1,7 @@
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -52,6 +52,7 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
         "tune_model": False,
         "register_model": False,
         "promote_model": False,
+        "settings": ANY,
     }
 
 
@@ -130,7 +131,7 @@ def test_package_main_builds_report_from_partitioned_datasets(
     observed: dict[str, object] = {}
 
     def fake_read_partitioned_dataset(
-        dataset_name: str, timestamp_column: str
+        dataset_name: str, timestamp_column: str, *, settings: object
     ) -> object:
         loaded.append((dataset_name, timestamp_column))
         return datasets[dataset_name]
@@ -200,10 +201,10 @@ def test_package_main_uses_monitoring_model_manifest(
     observed_report: dict[str, object] = {}
     observed_log: dict[str, object] = {}
 
-    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "RuntimeSettings", lambda: settings)
 
     def fake_read_partitioned_dataset(
-        dataset_name: str, timestamp_column: str
+        dataset_name: str, timestamp_column: str, *, settings: object
     ) -> object:
         return datasets[dataset_name]
 
@@ -253,6 +254,7 @@ def test_package_main_uses_monitoring_model_manifest(
     }
     assert observed_log == {
         "report": "report",
+        "settings": settings,
         "experiment_name": "churn-monitoring",
         "run_name": "monitoring",
         "tags": {
@@ -334,6 +336,53 @@ def test_package_main_passes_manifest_to_api_for_serving(
 
 
 @pytest.mark.smoke
+def test_cli_port_override_wins_over_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import uvicorn
+
+    import mlkit
+
+    monkeypatch.setenv("API_PORT", "not-a-port")
+    monkeypatch.delenv("USE_CASE", raising=False)
+    monkeypatch.delenv("MODEL_MANIFEST", raising=False)
+    run = Mock()
+    monkeypatch.setattr(uvicorn, "run", run)
+    mlkit.main(
+        [
+            "serve",
+            "--use_case",
+            "churn",
+            "--model_manifest",
+            str(tmp_path / "manifest.json"),
+            "--port",
+            "9123",
+        ]
+    )
+    assert run.call_args.kwargs["port"] == 9123
+
+
+@pytest.mark.smoke
+def test_non_serving_command_does_not_read_serving_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mlkit
+
+    monkeypatch.setenv("MODEL_VERSION", "not-a-version")
+    train_module = importlib.import_module("mlkit.train")
+    monkeypatch.setattr(
+        train_module,
+        "run_training_job",
+        Mock(
+            return_value=SimpleNamespace(
+                classifier_config={"model_name": "test"}, metrics={"roc_auc": 0.9}
+            )
+        ),
+    )
+    mlkit.main(["train", "--use_case", "churn", "--config", "config.yaml"])
+
+
+@pytest.mark.smoke
 def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -353,7 +402,7 @@ def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
     def fake_run_monitoring(**kwargs: object) -> None:
         observed.update(kwargs)
 
-    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "RuntimeSettings", lambda: settings)
     monkeypatch.setattr(core, "run_monitoring", fake_run_monitoring)
 
     mlkit.main(
@@ -433,7 +482,7 @@ def test_package_main_dispatches_prepare_data(
     observed: dict[str, object] = {}
     monkeypatch.setattr(
         mlkit,
-        "ServingSettings",
+        "RuntimeSettings",
         lambda: SimpleNamespace(
             data_dir=tmp_path,
             api_host="127.0.0.1",
@@ -472,6 +521,7 @@ def test_package_main_dispatches_prepare_data(
             "dataset_name": "partitioned",
             "timestamp_column": "reference_date",
             "overwrite_partitions": True,
+            "settings": ANY,
         },
     }
 
@@ -492,7 +542,7 @@ def test_package_main_dispatches_create_split(
         return
 
     settings = SimpleNamespace(data_dir=tmp_path)
-    monkeypatch.setattr(splitting, "RuntimeSettings", lambda: settings)
+    monkeypatch.setattr(mlkit, "RuntimeSettings", lambda: settings)
     monkeypatch.setattr(
         splitting,
         "create_time_based_split",
@@ -528,6 +578,7 @@ def test_package_main_dispatches_create_split(
         "split_date": "2026-04-01",
         "end_date": "2026-06-30",
         "split_name": "pytest",
+        "settings": settings,
     }
 
 
@@ -544,7 +595,7 @@ def test_package_main_uses_selected_use_case_time_columns_for_monitoring(
     loaded: list[tuple[str, str]] = []
 
     def fake_read_partitioned_dataset(
-        dataset_name: str, timestamp_column: str
+        dataset_name: str, timestamp_column: str, *, settings: object
     ) -> object:
         loaded.append((dataset_name, timestamp_column))
         return datasets[dataset_name]
@@ -596,7 +647,9 @@ def test_package_main_dispatches_log_ingestion(
     observed: dict[str, str] = {}
     use_case = SimpleNamespace(time_column="event_date")
 
-    def fake_ingest(dataset_name: str, timestamp_column: str) -> None:
+    def fake_ingest(
+        dataset_name: str, timestamp_column: str, *, settings: object
+    ) -> None:
         observed["dataset_name"] = dataset_name
         observed["timestamp_column"] = timestamp_column
 

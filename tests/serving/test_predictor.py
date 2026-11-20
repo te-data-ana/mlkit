@@ -8,7 +8,7 @@ import pytest
 
 from mlkit.serving.model_loader import LoadedModel
 from mlkit.serving.predictor import PredictionResult, Predictor
-from mlkit.use_cases.churn.serving import ChurnInputFeatures
+from mlkit.use_cases.churn.schema import ChurnInputFeatures
 
 
 @pytest.mark.unit
