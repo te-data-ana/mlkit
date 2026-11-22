@@ -7,13 +7,21 @@ split:
   end_date: '2026-06-30'
 
 model:
-  classifier: lr
+  classifier: dc
   register_model: true
   promote_model: true
 
 training:
   n_jobs: 16
-  tune_model: true
+  tune_model: false
 
 calibration:
   method: isotonic
+
+monitoring:
+  sample_date: '2026-07-01'
+  reference_dataset: predictions
+  analysis_dataset: api_predictions
+  error_dataset: api_errors
+  source_reference: batch
+  source_analysis: api

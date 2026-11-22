@@ -7,6 +7,12 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "mlkit",
+    "mlkit-use-cases",
+]
+
 [[package]]
 name = "aiobotocore"
 version = "3.10.0"
@@ -2395,6 +2401,7 @@ dev = [
     { name = "detect-secrets" },
     { name = "dvc" },
     { name = "httpx2" },
+    { name = "mlkit-use-cases" },
     { name = "pip-licenses" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -2431,6 +2438,7 @@ dev = [
     { name = "detect-secrets", specifier = ">=1.5.0" },
     { name = "dvc", specifier = ">=3.67.1" },
     { name = "httpx2", specifier = ">=2.16.0" },
+    { name = "mlkit-use-cases", editable = "use_cases" },
     { name = "pip-licenses", specifier = ">=5.5.5" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest", specifier = ">=9.1.1" },
@@ -2443,6 +2451,17 @@ notebooks = [
     { name = "jupyterlab", specifier = ">=4.6.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
 ]
+
+[[package]]
+name = "mlkit-use-cases"
+version = "0.1.0"
+source = { editable = "use_cases" }
+dependencies = [
+    { name = "mlkit" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mlkit", editable = "." }]
 
 [[package]]
 name = "multidict"

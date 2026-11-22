@@ -34,6 +34,12 @@ mlkit = "mlkit:main"
 requires = ["uv_build>=0.12.10,<0.14.0"]
 build-backend = "uv_build"
 
+[tool.uv.workspace]
+members = ["use_cases"]
+
+[tool.uv.sources]
+mlkit-use-cases = { workspace = true }
+
 [dependency-groups]
 datasets = [
     "ucimlrepo>=0.0.7",
@@ -48,6 +54,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.6",
+    "mlkit-use-cases",
 ]
 notebooks = [
     "ipykernel>=7.4.0",
@@ -57,8 +64,9 @@ notebooks = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "use_cases/tests"]
 addopts = [
+    "--import-mode=importlib",
     "--cov=src/mlkit",
     "--cov-report=term-missing",
     "--cov-report=html",

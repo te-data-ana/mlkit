@@ -182,11 +182,10 @@ def ingest_jsonl_log(
     df = read_jsonl_log(jsonl_path)
 
     if df.empty:
-        logger.info(
-            "No valid records found in %s. Skipping ingestion.",
+        logger.warning(
+            "No valid records found in %s.",
             jsonl_path,
         )
-        return
 
     write_partitioned_dataset(
         df=df,

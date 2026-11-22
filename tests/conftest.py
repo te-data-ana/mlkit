@@ -29,7 +29,9 @@ from mlkit.tracking.manifest import (
     ManifestTraining,
     TrainingManifest,
 )
-from mlkit.use_cases import CHURN_USE_CASE
+from mlkit.use_cases import get_use_case
+
+CHURN_USE_CASE = get_use_case("churn")
 
 
 @pytest.fixture

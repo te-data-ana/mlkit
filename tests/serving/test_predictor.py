@@ -5,10 +5,10 @@ from unittest.mock import Mock
 import numpy as np
 import pandas as pd
 import pytest
+from use_cases.churn.schema import ChurnInputFeatures
 
 from mlkit.serving.model_loader import LoadedModel
 from mlkit.serving.predictor import PredictionResult, Predictor
-from mlkit.use_cases.churn.schema import ChurnInputFeatures
 
 
 @pytest.mark.unit

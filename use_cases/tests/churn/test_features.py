@@ -1,8 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-
-from mlkit.use_cases.churn.features import ChurnFeatureBuilder
+from use_cases.churn.features import ChurnFeatureBuilder
 
 
 @pytest.mark.unit

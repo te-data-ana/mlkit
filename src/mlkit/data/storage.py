@@ -57,6 +57,10 @@ def write_partitioned_dataset(
         None.
     """
 
+    settings = settings or RuntimeSettings()
+    dataset_dir = settings.data_dir / dataset_name
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
     if df.empty:
         return
 
@@ -66,10 +70,6 @@ def write_partitioned_dataset(
 
     df["year"] = df[timestamp_column].dt.year
     df["month"] = df[timestamp_column].dt.month
-
-    settings = settings or RuntimeSettings()
-    dataset_dir = settings.data_dir / dataset_name
-    dataset_dir.mkdir(parents=True, exist_ok=True)
 
     if overwrite_partitions:
         year_month_comb = df[["year", "month"]].drop_duplicates().values
@@ -197,6 +197,8 @@ def read_partitioned_dataset(
 
     if start is None and end is None:
         df = pd.read_parquet(dataset_dir)
+        if df.empty:
+            df[timestamp_column] = []
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
 
     else:
@@ -215,7 +217,8 @@ def read_partitioned_dataset(
         partition_filters = _partition_filters(start, end)
 
         df = pd.read_parquet(dataset_dir, filters=partition_filters)
-
+        if df.empty:
+            df[timestamp_column] = []
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
 
         date_filter = df[timestamp_column].between(start, end, inclusive="both")

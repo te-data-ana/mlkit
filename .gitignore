@@ -50,6 +50,7 @@ tracking/mlflow.db
 tracking_local/mlflow.db
 
 # Logs
+api_logs/
 logs/
 logs_local/
 

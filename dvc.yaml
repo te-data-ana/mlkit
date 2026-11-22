@@ -1,6 +1,7 @@
 stages:
   add_reference_dates:
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run python -m mlkit.data.manipulation
       --use_case ${use_case}
       --input_csv customer_churn_dataset-training.csv
@@ -8,7 +9,7 @@ stages:
       --start_date 2023-01-01
       --end_date 2025-12-01
     deps:
-      - data/raw/customer_churn_dataset-training.csv
+      - data/${use_case}/raw/customer_churn_dataset-training.csv
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
@@ -17,9 +18,10 @@ stages:
     params:
       - use_case
     outs:
-      - data/raw/training.csv
+      - data/${use_case}/raw/training.csv
   add_inference_reference_dates:
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run python -m mlkit.data.manipulation
       --use_case ${use_case}
       --input_csv customer_churn_dataset-inference.csv
@@ -27,7 +29,7 @@ stages:
       --start_date 2026-01-01
       --end_date 2026-06-01
     deps:
-      - data/raw/customer_churn_dataset-inference.csv
+      - data/${use_case}/raw/customer_churn_dataset-inference.csv
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
@@ -36,18 +38,20 @@ stages:
     params:
       - use_case
     outs:
-      - data/raw/inference.csv
+      - data/${use_case}/raw/inference.csv
   prepare_partitioned_data:
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit prepare-data
       --use_case ${use_case}
       --input_csv training.csv &&
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit prepare-data
       --use_case ${use_case}
       --input_csv inference.csv
     deps:
-      - data/raw/training.csv
-      - data/raw/inference.csv
+      - data/${use_case}/raw/training.csv
+      - data/${use_case}/raw/inference.csv
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
@@ -56,9 +60,10 @@ stages:
     params:
       - use_case
     outs:
-      - data/partitioned
+      - data/${use_case}/partitioned
   create_oot_split:
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit create-split
       --use_case ${use_case}
       --dataset_name partitioned
@@ -67,7 +72,7 @@ stages:
       --end_date ${split.end_date}
       --split_name ${split.name}
     deps:
-      - data/partitioned
+      - data/${use_case}/partitioned
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
@@ -77,11 +82,12 @@ stages:
       - use_case
       - split
     outs:
-      - data/splits/${split.name}_test.parquet
-      - data/splits/${split.name}_train.parquet
-      - data/splits/${split.name}.json
+      - data/${use_case}/splits/${split.name}_test.parquet
+      - data/${use_case}/splits/${split.name}_train.parquet
+      - data/${use_case}/splits/${split.name}.json
   train_model:
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit train
       --use_case ${use_case}
       --config ${model.classifier}.yaml
@@ -92,9 +98,9 @@ stages:
       --register-model ${model.register_model}
       --promote-model ${model.promote_model}
     deps:
-      - data/splits/${split.name}_test.parquet
-      - data/splits/${split.name}_train.parquet
-      - data/splits/${split.name}.json
+      - data/${use_case}/splits/${split.name}_test.parquet
+      - data/${use_case}/splits/${split.name}_train.parquet
+      - data/${use_case}/splits/${split.name}.json
       - src/mlkit
       - src/config/${model.classifier}.yaml
       - pyproject.toml
@@ -109,18 +115,19 @@ stages:
       - model.register_model
       - model.promote_model
     outs:
-      - data/manifests:
+      - data/${use_case}/manifests:
           persist: true
   batch_predict_oot:
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit batch-predict
       --use_case ${use_case}
       --input_dataset splits/${split.name}_test.parquet
       --output_dataset predictions/${use_case}_${model.classifier}_${split.name}
       --model_manifest manifests/${use_case}-${model.classifier}-${split.name}.json
     deps:
-      - data/splits/${split.name}_test.parquet
-      - data/manifests/${use_case}-${model.classifier}-${split.name}.json
+      - data/${use_case}/splits/${split.name}_test.parquet
+      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit
       - pyproject.toml
       - uv.lock
@@ -129,5 +136,5 @@ stages:
       - model.classifier
       - split.name
     outs:
-      - data/predictions:
+      - data/${use_case}/predictions:
           persist: true

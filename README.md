@@ -30,21 +30,22 @@ Run the test suite:
 uv run pytest
 ```
 
-Training requires prepared files at
-`data/splits/{split_name}_train.parquet` and
-`data/splits/{split_name}_test.parquet`. Follow the data preparation and
-training workflows below to create them. The repository does not include the
-raw CSV contents; see [DVC experiments](#reproduce-an-out-of-time-experiment)
+Training requires prepared training and test parquet files
+`data/<use_case>/splits/<split_name>_train.parquet` and
+`data/<use_case>/splits/<split_name>_test.parquet`.
+Follow the data preparation and training workflows below to create them. The
+repository does not include the raw CSV contents; see
+[DVC experiments](#reproduce-an-out-of-time-experiment)
 for how to obtain and track those local inputs.
 
 ## Workflows
 
 ### Prepare data and create a time-based split
 
-Raw input CSVs belong in `data/raw`. The helper below assigns dates from the
-requested range to rows and writes an enriched CSV in `data/raw`. Prepare both
-training and inference cohorts so the partitioned dataset covers the full
-out-of-time window:
+Raw input CSVs belong in `data/<use_case>/raw`. The helper below assigns dates
+from the requested range to rows and writes an enriched CSV in the same
+directory. Prepare both training and inference cohorts so the partitioned
+dataset covers the full out-of-time window:
 
 ```bash
 uv run python -m mlkit.data.manipulation \
@@ -63,8 +64,8 @@ uv run python -m mlkit.data.manipulation \
 ```
 
 `prepare-data` validates a CSV and writes it as a month-partitioned Parquet
-dataset under `data/partitioned`. The input argument is a filename under
-`data/raw`. Prepare both enriched files:
+dataset under `data/<use_case>/partitioned`. The input argument is a filename
+under `data/<use_case>/raw`. Prepare both enriched files:
 
 ```bash
 uv run mlkit prepare-data --input_csv training.csv --use_case churn
@@ -86,7 +87,7 @@ uv run mlkit create-split \
 ```
 
 This creates `oot-26Q2_train.parquet`, `oot-26Q2_test.parquet`, and split
-metadata in `data/splits`.
+metadata in `data/<use_case>/splits`.
 
 ### Reproduce an out-of-time experiment
 
@@ -101,17 +102,17 @@ model artifacts, and registered versions.
 Optuna tuning is disabled by default in the DVC pipeline; opt in for a run with
 `training.tune_model=true`.
 
-The `data/manifests` and `data/predictions` directories are persistent DVC
-outputs. Manifest files are named by `{use_case}-{classifier}-{split}`; the
-prediction dataset path uses `{use_case}_{classifier}_{split}`. Repeating a
-pipeline combination reuses its output paths; it does not create a separate
-archive for each run.
+The `data/<use_case>/manifests` and `data/<use_case>/predictions` directories
+are persistent DVC outputs. Manifest files are named by
+`{use_case}-{classifier}-{split}`; the prediction dataset path uses
+`{use_case}_{classifier}_{split}`. Repeating a pipeline combination reuses its
+output paths; it does not create a separate archive for each run.
 
 The checked-in [params.yaml](params.yaml) selects the `churn` use case and
 configures `oot-26Q2`: training from 2025-04-01 through 2026-03-31 and testing
-from 2026-04-01 through 2026-06-30, using the `hgb` classifier. Date bounds
+from 2026-04-01 through 2026-06-30, using the `dc` classifier. Date bounds
 are inclusive. Provide the configured training and inference CSVs under
-`data/raw` before running the pipeline:
+`data/<use_case>/raw` before running the pipeline:
 
 ```bash
 uv run dvc repro
@@ -122,8 +123,8 @@ To add or update the local source files tracked by DVC, run:
 
 ```bash
 uv run dvc add \
-  data/raw/customer_churn_dataset-training.csv \
-  data/raw/customer_churn_dataset-inference.csv
+  data/churn/raw/customer_churn_dataset-training.csv \
+  data/churn/raw/customer_churn_dataset-inference.csv
 ```
 
 Commit the generated `.dvc` pointers, not the CSV contents.
@@ -169,9 +170,10 @@ classifier YAML.
 
 Registration and promotion default to disabled on direct training calls. The DVC
 `model.register_model` parameter enables registration for this pipeline run.
-Promotion remains disabled by the stage's `--no-promote-model` argument. The
-pipeline scores the logged MLflow model artifact, using the exact registered
-version from the manifest when registration is enabled.
+The `model.promote_model` parameter enables promotion through the stage's
+`--promote-model` argument. The pipeline scores the logged MLflow model
+artifact, using the exact registered version from the manifest when registration
+is enabled.
 
 The source CSVs are represented in Git by `.dvc` pointer files, not by their
 contents. This repository has no DVC remote, so a fresh clone must be supplied
@@ -181,9 +183,9 @@ requires sharing both DVC data and MLflow tracking/artifacts.
 
 ### Train and evaluate a model
 
-Training reads prepared Parquet files from `data/splits`, builds and fits the
-configured pipeline, evaluates it on the test split, and logs the run to
-MLflow.
+Training reads prepared Parquet files from `data/<use_case>/splits`, builds
+and fits the configured pipeline, evaluates it on the test split, and logs the
+run to MLflow.
 
 ```bash
 uv run mlkit train \
@@ -262,10 +264,11 @@ select a registered model and its configured alias. A training manifest
 identifies the logged MLflow model and prediction threshold, whether or not
 that model is registered.
 
-For CSV input, the input filename is resolved under `data/raw` and the output
-is written under `output`:
+For CSV input, the input filename is resolved under `data/<use_case>/raw` and
+the output is written under `output`:
 
 ```bash
+DATA_DIR=$PWD/data/churn \
 uv run mlkit batch-predict \
   --use_case churn \
   --input_csv inference.csv \
@@ -279,6 +282,7 @@ date-only end bound includes that calendar day. Existing output partitions for
 the months in the result are replaced.
 
 ```bash
+DATA_DIR=$PWD/data/churn \
 uv run mlkit batch-predict \
   --use_case churn \
   --input_dataset partitioned \
@@ -296,6 +300,7 @@ To score a specific model version, pass both its registered name and version.
 Alternatively, pass a manifest path relative to `DATA_DIR`:
 
 ```bash
+DATA_DIR=$PWD/data/churn \
 uv run mlkit batch-predict \
   --use_case churn \
   --input_dataset splits/oot-26Q2_test.parquet \
@@ -315,9 +320,9 @@ selected model must have been trained for the selected use case; mismatches
 prevent readiness:
 
 ```bash
-MODEL_NAME=churn-model \
+DATA_DIR=$PWD/data/churn MODEL_NAME=churn-model \
   uv run mlkit serve --use_case churn --host 127.0.0.1 --port 8000 --reload
-uv run mlkit serve --use_case churn --model_manifest manifests/churn-lr-oot-26Q2.json
+DATA_DIR=$PWD/data/churn uv run mlkit serve --use_case churn --model_manifest manifests/churn-lr-oot-26Q2.json
 ```
 
 The service loads the selected model once per process. Its
@@ -359,8 +364,9 @@ version) to load a registered model. The interactive API reference is available
 at <http://127.0.0.1:8000/docs>.
 
 For sample-based API checks, the helper reads and samples the CSV given by
-`--input_csv` (resolved in `data/raw`), sends each row to the service, and
-writes predictions with the input features to the configured output directory:
+`--input_csv` (resolved in `data/<use_case>/raw`), sends each row to the
+service, and writes predictions with the input features to the configured
+output directory:
 
 ```bash
 uv run python -m mlkit.serving.serve_samples \
@@ -440,20 +446,22 @@ The CSV report is named `monitoring_summary_batch.csv` or
 
 For repeatable cohort selection and MLflow tracking, the separate
 [monitoring pipeline](monitoring_pipeline/dvc.yaml) uses settings from
-[monitoring_pipeline/params.yaml](monitoring_pipeline/params.yaml):
+[params.yaml](params.yaml):
 
 ```bash
 uv run dvc repro monitoring_pipeline/dvc.yaml:monitor
 ```
 
-This writes a scenario-specific report under `data/monitoring` and logs the
-report, cohort names, and model version as an MLflow monitoring run. Choose
-non-overlapping time periods when drift metrics are required.
+This writes a scenario-specific report under
+`data/<use_case>/monitoring/<name>` and logs the report, cohort names, and model
+version as an MLflow monitoring run. Choose non-overlapping time periods when
+drift metrics are required.
 
 API prediction and error logs can be converted into month-partitioned Parquet
 datasets. Select the use case so its time column is used for partitioning. By
-default, these commands read the configured JSONL logs and write to
-`data/api_predictions` and `data/api_errors`:
+default, these commands read the configured JSONL logs under
+`data/<use_case>/api_logs` and write to `data/<use_case>/api_predictions` and
+`data/<use_case>/api_errors`:
 
 ```bash
 uv run mlkit ingest-prediction-logs --use_case churn
@@ -467,22 +475,32 @@ dataset or partition timestamp.
 
 ## Use case specifications
 
-Use-case-specific behavior lives under [use_cases](src/mlkit/use_cases):
-each use case defines its `target_column`, `time_column` and `feature_schema`,
-as well as optional feature-engineering (`feature_builder_factory`),
-`index_column` and optional `metadata_fields`, which map additional retained
-column names to Pydantic-compatible types. Shared training, batch prediction,
-API, and monitoring code consumes this data contract.
+Use-case implementations are separate from the reusable `mlkit` application
+package. The core package owns the `UseCase` base contract and
+[entry-point registry](src/mlkit/use_cases/registry.py), while the included
+implementations live in the dedicated
+[use_cases module](use_cases/src/use_cases). Each use case defines its
+`target_column`, `time_column` and `feature_schema`, as well as optional
+feature-engineering (`feature_builder_factory`), `index_column` and optional
+`metadata_fields`, which map additional retained column names to
+Pydantic-compatible types. Shared training, batch prediction, API, and
+monitoring code consumes this data contract.
+
+The `mlkit-use-cases` workspace package exposes churn and phishing use cases
+through `mlkit.use_cases` entry points. `get_use_case()` discovers installed
+entry points and returns the named contract. External use-case packages can use
+the same entry-point group without modifying `mlkit`.
 
 To add another use case:
 
-1. Add a use_case package with its Pydantic feature schema and a feature
-   engineering transformer. Use the shared
+1. Add a module under `use_cases/src/use_cases/<name>` with its Pydantic
+   feature schema and feature-engineering transformer. Use the shared
    [identity feature transformer](src/mlkit/models/features.py) when no
    domain-specific feature engineering is required.
-2. Register a `UseCase` in [registry.py](src/mlkit/use_cases/registry.py),
-   providing its target, time and feature columns, and the choosen feature
-   transformer.
+2. Construct a `UseCase` for the implementation and expose it from
+   `use_cases/pyproject.toml` as an entry point in the `mlkit.use_cases`
+   group. The entry-point value must resolve to the `UseCase` instance.
+   Calls can also use `register_use_case()` for in-process registration.
 3. Add a training YAML with model settings; pass the registered use case
    explicitly when invoking training.
 4. Select the use case explicitly with `--use_case` for data preparation,
@@ -524,8 +542,8 @@ For this churn use case, training data also requires a binary `churn` target
 and `reference_date`. CSV loading normalizes column names; `customerid` can be
 selected as the CSV index.
 
-The churn data contract is validated with Pydantic, see
-[churn feature schema](src/mlkit/use_cases/churn/schema.py).
+The churn data contract is validated with Pydantic; see the
+[churn feature schema](use_cases/src/use_cases/churn/schema.py).
 
 
 ## Model configuration and tracking reference
@@ -707,10 +725,11 @@ DVC monitoring pipeline), it logs the summary CSV under `monitoring/` and adds
 tags describing its input cohorts and, when available, the model. The command
 also writes its report under `OUTPUT_DIR`.
 
-The DVC pipeline for reproducible training experiments on the contrary, writes
-separate manifests and predictions under `data/manifests` and `data/predictions`.
-The local manifests can be used for scoring and serving. As indicated above,
-each manifest is also logged under along with its MLflow run.
+The DVC pipeline for reproducible training experiments writes separate
+manifests and predictions under `data/<use_case>/manifests` and
+`data/<use_case>/predictions`. The local manifests can be used for scoring and
+serving. As indicated above, each manifest is also logged along with its MLflow
+run.
 
 To browse run metadata and artifacts, start the MLflow UI using the tracking
 database path configured for this project (replace it if `TRACKING_DIR` or
@@ -869,26 +888,31 @@ requests.
 ## Repository layout
 
 ```text
-src/mlkit/       Application package
+src/mlkit/             Application package
   config/              Runtime and training configuration
   data/                Loading, validation, partitioning, and splitting
   evaluation/          Model metrics
   models/              Feature engineering and classifier catalog
-  use_cases/           Use-case contracts and domain adapters
+  use_cases/           UseCase contracts and entry-point registry
   monitoring/          Performance, drift, and operational reports
   serving/             FastAPI service and inference logging
   tracking/            MLflow integration, registry, and manifests
   training/            Training and hyperparameter tuning
 src/config/            YAML training configurations
-data/raw/              Local input CSVs (not stored in Git)
-data/partitioned/      Month-partitioned Parquet data
-data/splits/           Train/test Parquet files
+use_cases/             Separate use-case workspace package
+  src/use_cases/       Churn, phishing, and other use-case implementations
+  tests/               Use-case implementation tests
+data/<use_case>/       Per-use-case local data (not stored in Git)
+  manifests/           Training manifests
+  partitioned/         Month-partitioned Parquet data
+  predictions/         Batch prediction datasets
+  raw/                 Local input CSVs
+  splits/              Train/test Parquet files
 monitoring_pipeline/    DVC pipeline for selected monitoring cohorts
-notebooks/              Exploratory and analysis notebooks
 tests/                  Unit and integration tests
 compose.yaml            Local container stack
 dvc.yaml                Data preparation, training, and scoring pipeline
-params.yaml             Parameters for the root DVC pipeline
+params.yaml             Parameters for the training and monitoring pipelines
 ```
 
 ## Scope and limitations

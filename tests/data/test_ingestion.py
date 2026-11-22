@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pandas as pd
 import pytest
@@ -126,20 +127,22 @@ def test_ingest_jsonl_log_writes_nonempty_records(
 
 
 @pytest.mark.unit
-def test_ingest_jsonl_log_skips_empty_logs(
+def test_ingest_jsonl_log_writes_empty_logs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    writes: list[dict[str, object]] = []
+    empty_df = pd.DataFrame()
+    read_jsonl_log = Mock(return_value=empty_df)
     monkeypatch.setattr(
         ingestion,
         "read_jsonl_log",
-        lambda _: pd.DataFrame(),
+        read_jsonl_log,
     )
+    write_partitioned_dataset = Mock()
     monkeypatch.setattr(
         ingestion,
         "write_partitioned_dataset",
-        lambda **kwargs: writes.append(kwargs),
+        write_partitioned_dataset,
     )
 
     ingestion.ingest_jsonl_log(
@@ -148,7 +151,13 @@ def test_ingest_jsonl_log_skips_empty_logs(
         jsonl_path=tmp_path / "empty.jsonl",
     )
 
-    assert writes == []
+    write_partitioned_dataset.assert_called_once_with(
+        df=empty_df,
+        dataset_name="predictions",
+        timestamp_column="reference_date",
+        overwrite_partitions=True,
+        settings=None,
+    )
 
 
 @pytest.mark.unit

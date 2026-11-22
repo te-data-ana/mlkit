@@ -102,14 +102,23 @@ def test_write_partitioned_dataset_replaces_only_matching_partitions(
 
 
 @pytest.mark.unit
-def test_write_partitioned_dataset_skips_empty_dataframe(data_dir: Path) -> None:
+def test_write_partitioned_dataset_writes_empty_dataframe(data_dir: Path) -> None:
+    empty_df = pd.DataFrame()
     write_partitioned_dataset(
-        df=pd.DataFrame(),
+        df=empty_df,
         dataset_name="empty",
         timestamp_column="reference_date",
     )
 
-    assert not (data_dir / "empty").exists()
+    assert (data_dir / "empty").exists()
+
+    result = read_partitioned_dataset(
+        dataset_name="empty",
+        timestamp_column="reference_date",
+    )
+    empty_df["reference_date"] = []
+    empty_df["reference_date"] = pd.to_datetime(empty_df["reference_date"])
+    assert result.equals(empty_df)
 
 
 @pytest.mark.unit
