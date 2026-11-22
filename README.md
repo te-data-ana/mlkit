@@ -91,13 +91,14 @@ metadata in `data/<use_case>/splits`.
 
 ### Reproduce an out-of-time experiment
 
-The root [dvc.yaml](dvc.yaml) defines a pipeline that adds the selected use
-case's time column, prepares partitioned data, creates a time split, trains a
-model, then scores the held-out cohort. The top-level `use_case` parameter
-selects a registered contract for preparation, splitting, training, and
-scoring. Run-time training options are passed as CLI arguments by the DVC
-stage. DVC tracks stage inputs and outputs; MLflow stores runs, metrics,
-model artifacts, and registered versions.
+The [churn pipeline](pipeline/churn/dvc.yaml) adds the selected use case's
+time column, prepares partitioned data, creates a time split, trains a model,
+then scores the held-out cohort. The top-level `use_case` parameter selects a
+registered contract for preparation, splitting, training, and scoring.
+Run-time training options are passed as CLI arguments by the DVC stage. DVC
+tracks stage inputs and outputs; MLflow stores runs, metrics, model artifacts,
+and registered versions. Keep each use case's pipeline and parameters together
+under `pipeline/`, and use explicit pipeline paths when reproducing a workflow.
 
 Optuna tuning is disabled by default in the DVC pipeline; opt in for a run with
 `training.tune_model=true`.
@@ -108,16 +109,26 @@ are persistent DVC outputs. Manifest files are named by
 `{use_case}_{classifier}_{split}`. Repeating a pipeline combination reuses its
 output paths; it does not create a separate archive for each run.
 
-The checked-in [params.yaml](params.yaml) selects the `churn` use case and
-configures `oot-26Q2`: training from 2025-04-01 through 2026-03-31 and testing
-from 2026-04-01 through 2026-06-30, using the `dc` classifier. Date bounds
-are inclusive. Provide the configured training and inference CSVs under
-`data/<use_case>/raw` before running the pipeline:
+The [pipeline/churn.yaml](pipeline/churn.yaml) DVC parameter preset selects
+the `churn` use case and configures `oot-26Q2`: training from 2025-04-01
+through 2026-03-31 and testing from 2026-04-01 through 2026-06-30, using the
+`dc` classifier. Date bounds are inclusive. Provide the configured training and
+inference CSVs under `data/<use_case>/raw` before running the pipeline:
 
 ```bash
-uv run dvc repro
+uv run dvc repro pipeline/churn/dvc.yaml
 uv run dvc status
 ```
+
+The churn monitoring pipeline uses the same parameter preset:
+
+```bash
+uv run dvc repro pipeline/churn/monitoring/dvc.yaml
+```
+
+Use the explicit pipeline path when switching workflows. Each pipeline file
+sets its working directory to the repository root, while the parameter preset
+it reads is tracked as a stage parameter.
 
 To add or update the local source files tracked by DVC, run:
 
@@ -129,29 +140,35 @@ uv run dvc add \
 
 Commit the generated `.dvc` pointers, not the CSV contents.
 
-To run another quarter/classifier combination as a named DVC experiment:
+Add the pipeline and parameter files to Git so DVC can include them in its
+experiment workspace. Then run another quarter/classifier combination as a
+named DVC experiment:
 
 ```bash
 uv run dvc exp run --name churn-12m-oot \
-  --set-param use_case=churn \
-  --set-param model.classifier=lr \
-  --set-param split.name=oot-26Q2 \
-  --set-param 'split.start_date="2025-04-01"' \
-  --set-param 'split.split_date="2026-04-01"' \
-  --set-param 'split.end_date="2026-06-30"' \
-  --set-param calibration.method=isotonic \
-  --set-param training.n_jobs=4 \
-  --set-param training.tune_model=true \
-  --set-param model.register_model=true
+  --set-param pipeline/churn.yaml:use_case=churn \
+  --set-param pipeline/churn.yaml:model.classifier=lr \
+  --set-param pipeline/churn.yaml:split.name=oot-26Q2 \
+  --set-param 'pipeline/churn.yaml:split.start_date="2025-04-01"' \
+  --set-param 'pipeline/churn.yaml:split.split_date="2026-04-01"' \
+  --set-param 'pipeline/churn.yaml:split.end_date="2026-06-30"' \
+  --set-param pipeline/churn.yaml:calibration.method=isotonic \
+  --set-param pipeline/churn.yaml:training.n_jobs=4 \
+  --set-param pipeline/churn.yaml:training.tune_model=true \
+  --set-param pipeline/churn.yaml:model.register_model=true \
+  pipeline/churn/dvc.yaml
 ```
 
-The `use_case` parameter (set in `params.yaml`) selects the registered contract
-and is passed as the required `--use_case` argument to training. Training
-derives the MLflow experiment name as `{use_case}-{split_name}` and registry
-model name as `{use_case}-model`. A registered model receives no alias until it
-is promoted; successful promotion assigns `champion`.
-To run another registered use case, also update the corresponding input CSVs
-and date ranges in `dvc.yaml`.
+The `use_case` parameter in [pipeline/churn.yaml](pipeline/churn.yaml)
+selects the registered contract and is passed as the required `--use_case`
+argument to training. Training derives the MLflow experiment name as
+`{use_case}-{split_name}` and registry model name as `{use_case}-model`.
+A registered model receives no alias until it is promoted; successful promotion
+assigns the `champion` alias.
+To add another use case, put its parameter file at `pipeline/<use_case>.yaml`
+and its DVC pipeline in `pipeline/<use_case>/dvc.yaml`. Put monitoring stages in
+`pipeline/<use_case>/monitoring/dvc.yaml`. Use the selected pipeline's explicit
+path with `dvc repro` or `dvc exp run`.
 
 `model.classifier` selects `src/config/{classifier}.yaml`, so each classifier
 alias used by this pipeline must have a matching config file.
@@ -445,11 +462,11 @@ The CSV report is named `monitoring_summary_batch.csv` or
 `monitoring_summary_api.csv`, depending on the analysis source.
 
 For repeatable cohort selection and MLflow tracking, the separate
-[monitoring pipeline](monitoring_pipeline/dvc.yaml) uses settings from
-[params.yaml](params.yaml):
+[monitoring pipeline](pipeline/churn/monitoring/dvc.yaml) uses settings from
+[pipeline/churn.yaml](pipeline/churn.yaml):
 
 ```bash
-uv run dvc repro monitoring_pipeline/dvc.yaml:monitor
+uv run dvc repro pipeline/churn/monitoring/dvc.yaml:monitor
 ```
 
 This writes a scenario-specific report under
@@ -908,11 +925,12 @@ data/<use_case>/       Per-use-case local data (not stored in Git)
   predictions/         Batch prediction datasets
   raw/                 Local input CSVs
   splits/              Train/test Parquet files
-monitoring_pipeline/    DVC pipeline for selected monitoring cohorts
 tests/                  Unit and integration tests
 compose.yaml            Local container stack
-dvc.yaml                Data preparation, training, and scoring pipeline
-params.yaml             Parameters for the training and monitoring pipelines
+pipeline/              DVC orchestration for different use-cases
+  <use_case>/dvc.yaml  Data preparation, training, and scoring pipeline
+  <use_case>/monitoring/dvc.yaml  Monitoring pipeline
+  <use_case>.yaml      Use-case parameters for training and monitoring pipelines
 ```
 
 ## Scope and limitations

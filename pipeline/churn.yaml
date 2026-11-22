@@ -7,13 +7,13 @@ split:
   end_date: '2026-06-30'
 
 model:
-  classifier: dc
+  classifier: lr
   register_model: true
   promote_model: true
 
 training:
-  n_jobs: 16
-  tune_model: false
+  n_jobs: 4
+  tune_model: true
 
 calibration:
   method: isotonic

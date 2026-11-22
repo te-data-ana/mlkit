@@ -1,10 +1,9 @@
 vars:
-  - ../params.yaml
+  - ../../churn.yaml
 
 stages:
   serve_samples:
-    wdir:
-      ../
+    wdir: ../../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       LOGGING_DIR=$PWD/data/${use_case}/api_logs
@@ -24,13 +23,13 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
     outs:
       - data/${use_case}/api_logs:
           persist: true
   ingest_prediction_logs:
-    wdir:
-      ../
+    wdir: ../../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       LOGGING_DIR=$PWD/data/${use_case}/api_logs
@@ -45,13 +44,13 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - monitoring.analysis_dataset
+      - pipeline/churn.yaml:
+          - use_case
+          - monitoring.analysis_dataset
     outs:
       - data/${use_case}/${monitoring.analysis_dataset}
   ingest_error_logs:
-    wdir:
-      ../
+    wdir: ../../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       LOGGING_DIR=$PWD/data/${use_case}/api_logs
@@ -66,13 +65,13 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - monitoring.error_dataset
+      - pipeline/churn.yaml:
+          - use_case
+          - monitoring.error_dataset
     outs:
       - data/${use_case}/${monitoring.error_dataset}
   monitor:
-    wdir:
-      ../
+    wdir: ../../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run mlkit monitor
@@ -95,6 +94,7 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - monitoring
+      - pipeline/churn.yaml:
+          - monitoring
     outs:
       - data/${use_case}/monitoring/${use_case}_${model.classifier}_${split.name}

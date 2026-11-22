@@ -1,5 +1,9 @@
+vars:
+  - ../churn.yaml
+
 stages:
   add_reference_dates:
+    wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run python -m mlkit.data.manipulation
@@ -16,10 +20,12 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
     outs:
       - data/${use_case}/raw/training.csv
   add_inference_reference_dates:
+    wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run python -m mlkit.data.manipulation
@@ -36,10 +42,12 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
     outs:
       - data/${use_case}/raw/inference.csv
   prepare_partitioned_data:
+    wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run mlkit prepare-data
@@ -58,10 +66,12 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
     outs:
       - data/${use_case}/partitioned
   create_oot_split:
+    wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run mlkit create-split
@@ -79,13 +89,15 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - split
+      - pipeline/churn.yaml:
+          - use_case
+          - split
     outs:
       - data/${use_case}/splits/${split.name}_test.parquet
       - data/${use_case}/splits/${split.name}_train.parquet
       - data/${use_case}/splits/${split.name}.json
   train_model:
+    wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run mlkit train
@@ -106,18 +118,20 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - model.classifier
-      - split.name
-      - calibration.method
-      - training.n_jobs
-      - training.tune_model
-      - model.register_model
-      - model.promote_model
+      - pipeline/churn.yaml:
+          - use_case
+          - model.classifier
+          - split.name
+          - calibration.method
+          - training.n_jobs
+          - training.tune_model
+          - model.register_model
+          - model.promote_model
     outs:
       - data/${use_case}/manifests:
           persist: true
   batch_predict_oot:
+    wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
       uv run mlkit batch-predict
@@ -132,9 +146,10 @@ stages:
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - model.classifier
-      - split.name
+      - pipeline/churn.yaml:
+          - use_case
+          - model.classifier
+          - split.name
     outs:
       - data/${use_case}/predictions:
           persist: true
