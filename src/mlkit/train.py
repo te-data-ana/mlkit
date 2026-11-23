@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import subprocess
 from dataclasses import asdict
@@ -36,6 +37,7 @@ from mlkit.training import (
     optimize_hyperparameters,
     train_model,
 )
+from mlkit.training.model_training import split_threshold_validation
 from mlkit.use_cases import get_use_case
 
 
@@ -142,13 +144,35 @@ def run_training_job(
         run_name = f"{selected_use_case.name}-{classifier_alias}-{split_name}"
         manifest_file = settings.data_dir / f"manifests/{run_name}.json"
 
-        split_metadata: dict[str, str | int] = {}
+        split_metadata: dict[str, str | int | float] = {}
         split_metadata_path = resolved_split_dir / f"{split_name}.json"
         if split_metadata_path.exists():
             payload = json.loads(split_metadata_path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or not all(
-                key in payload
-                for key in (
+            if not isinstance(payload, dict) or payload.get("strategy") not in (
+                "temporal",
+                "stratified_random",
+            ):
+                raise ValueError(
+                    f"Split metadata '{split_metadata_path}' has an unknown strategy."
+                )
+            actual_strategy = payload["strategy"]
+            if actual_strategy != selected_use_case.split_strategy:
+                raise ValueError(
+                    f"Split metadata '{split_metadata_path}' uses {actual_strategy!r}, "
+                    f"but use case '{use_case}' requires "
+                    f"{selected_use_case.split_strategy!r}."
+                )
+            required = (
+                (
+                    "train_rows",
+                    "test_rows",
+                    "monitoring_rows",
+                    "random_state",
+                    "test_fraction",
+                    "monitoring_fraction",
+                )
+                if actual_strategy == "stratified_random"
+                else (
                     "train_rows",
                     "test_rows",
                     "train_start",
@@ -156,17 +180,42 @@ def run_training_job(
                     "test_start",
                     "test_end",
                 )
-            ):
+            )
+            if not all(key in payload for key in required):
                 raise ValueError(
                     f"Split metadata '{split_metadata_path}' is missing required fields."
                 )
+            row_keys = ("train_rows", "test_rows")
+            if actual_strategy == "stratified_random":
+                row_keys += ("monitoring_rows", "random_state")
+            if not all(
+                type(payload[key]) is int and payload[key] >= 0 for key in row_keys
+            ):
+                raise ValueError(
+                    f"Split metadata '{split_metadata_path}' has invalid counts or seed."
+                )
+            if actual_strategy == "stratified_random":
+                fractions = (payload["test_fraction"], payload["monitoring_fraction"])
+                if not all(
+                    type(value) in (int, float) and math.isfinite(value)
+                    for value in fractions
+                ) or not (
+                    fractions[0] > 0 and fractions[1] >= 0 and sum(fractions) < 1
+                ):
+                    raise ValueError(
+                        f"Split metadata '{split_metadata_path}' has invalid fractions."
+                    )
+            else:
+                if not all(
+                    isinstance(payload[key], str) and payload[key]
+                    for key in ("train_start", "train_end", "test_start", "test_end")
+                ):
+                    raise ValueError(
+                        f"Split metadata '{split_metadata_path}' has invalid dates."
+                    )
             split_metadata = {
-                "train_rows": int(payload["train_rows"]),
-                "train_start": str(payload["train_start"]),
-                "train_end": str(payload["train_end"]),
-                "test_rows": int(payload["test_rows"]),
-                "test_start": str(payload["test_start"]),
-                "test_end": str(payload["test_end"]),
+                "strategy": actual_strategy,
+                **{key: payload[key] for key in required},
             }
 
         logger.info("Loaded training configuration from '%s'.", config_file_path)
@@ -205,6 +254,16 @@ def run_training_job(
             split_name,
             len(train_df),
             len(test_df),
+        )
+        fit_df, validation_df = split_threshold_validation(
+            train_df, selected_use_case.target_column, config
+        )
+        split_metadata["fit_rows"] = len(fit_df)
+        split_metadata["validation_rows"] = len(validation_df)
+        logger.info(
+            "Reserved %d training rows for threshold validation; fitting on %d rows.",
+            len(validation_df),
+            len(fit_df),
         )
 
         # Start an MLflow run for the training job and log the results
@@ -248,39 +307,32 @@ def run_training_job(
             ):
                 if env_value := os.environ.get(env_name):
                     mlflow.set_tag(tag_name, env_value)
-            if split_metadata:
-                mlflow.log_params(
-                    {
-                        "train_rows": split_metadata["train_rows"],
-                        "train_start": split_metadata["train_start"],
-                        "train_end": split_metadata["train_end"],
-                        "test_rows": split_metadata["test_rows"],
-                        "test_start": split_metadata["test_start"],
-                        "test_end": split_metadata["test_end"],
-                    }
+            logged_split_metadata = dict(split_metadata)
+            if "random_state" in logged_split_metadata:
+                logged_split_metadata["split_random_state"] = logged_split_metadata.pop(
+                    "random_state"
                 )
-                logger.info("Logged split metadata to MLflow: %s.", split_metadata)
+            mlflow.log_params(logged_split_metadata)
+            logger.info("Logged split metadata to MLflow: %s.", split_metadata)
+            model_params_override = None
             if tune_model:
                 tuning_result = optimize_hyperparameters(
                     use_case=selected_use_case,
                     config=config,
-                    train_df=train_df,
+                    train_df=fit_df,
                     n_jobs=n_jobs,
                 )
-                mlflow.log_params(
-                    {
-                        "tuning_n_trials": tuning_result.n_trials,
-                        "tuning_n_splits": tuning_result.n_splits,
-                        "tuning_n_jobs": n_jobs,
-                        "tuning_time_column": tuning_result.time_column,
-                        "tuning_metric": tuning_result.metric,
-                        "tuning_random_state": tuning_result.random_state,
-                        "tuning_best_params": json.dumps(
-                            tuning_result.best_params,
-                            sort_keys=True,
-                        ),
-                    }
-                )
+                tuning_params = {
+                    "tuning_n_trials": tuning_result.n_trials,
+                    "tuning_n_splits": tuning_result.n_splits,
+                    "tuning_n_jobs": n_jobs,
+                    "tuning_metric": tuning_result.metric,
+                    "tuning_best_params": json.dumps(
+                        tuning_result.best_params,
+                        sort_keys=True,
+                    ),
+                }
+                mlflow.log_params(tuning_params)
                 mlflow.log_metric(
                     f"tuning_cv_{tuning_result.metric}",
                     tuning_result.best_score,
@@ -291,28 +343,22 @@ def run_training_job(
                     tuning_result.best_score,
                     tuning_result.best_params,
                 )
-                result = train_model(
-                    use_case=selected_use_case,
-                    config=config,
-                    train_df=train_df,
-                    test_df=test_df,
-                    model_params_override=tuning_result.best_params,
-                    calibration_method=calibration_method,
-                    n_jobs=n_jobs,
-                )
+                model_params_override = tuning_result.best_params
             else:
                 logger.info(
                     "Hyperparameter tuning is disabled for this run; using configured "
                     "classifier parameters."
                 )
-                result = train_model(
-                    use_case=selected_use_case,
-                    config=config,
-                    train_df=train_df,
-                    test_df=test_df,
-                    calibration_method=calibration_method,
-                    n_jobs=n_jobs,
-                )
+            result = train_model(
+                use_case=selected_use_case,
+                config=config,
+                fit_df=fit_df,
+                validation_df=validation_df,
+                test_df=test_df,
+                model_params_override=model_params_override,
+                calibration_method=calibration_method,
+                n_jobs=n_jobs,
+            )
             result.metrics["promotion_score"] = (
                 PromotionService.calculate_weighted_score(
                     result.metrics,

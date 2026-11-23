@@ -54,3 +54,19 @@ def test_evaluate_model_uses_threshold_for_classification_metrics() -> None:
     assert evaluation.precision == pytest.approx(0.5)
     assert evaluation.recall == pytest.approx(0.5)
     assert evaluation.f1 == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize(
+    ("labels", "probabilities", "bins", "expected"),
+    [
+        ([0, 1, 1, 1], [0.0, 0.5, 0.6, 1.0], 2, 0.225),
+        ([0, 1, 0, 1], [0.5, 0.56, 0.31, 0.14], 10, 0.5275),
+    ],
+)
+def test_evaluate_model_calibration_error_on_bin_boundaries(
+    labels: list[int], probabilities: list[float], bins: int, expected: float
+) -> None:
+    evaluation = metrics.evaluate_model(
+        y_true=labels, y_prob=probabilities, threshold=0.5, calibration_bins=bins
+    )
+    assert evaluation.calibration_error == pytest.approx(expected)

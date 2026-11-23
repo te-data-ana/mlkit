@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -6,7 +7,7 @@ import pandas as pd
 
 from mlkit.config import RuntimeSettings
 from mlkit.data.jsonl_logs import read_jsonl_log
-from mlkit.data.storage import write_partitioned_dataset
+from mlkit.data.storage import write_parquet_dataset
 from mlkit.data.validation import validate_data
 from mlkit.use_cases import UseCase
 
@@ -14,7 +15,22 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_strings(seq: Sequence[str]) -> Sequence[str]:
-    return [s.strip().lower().replace(" ", "_") for s in seq]
+    """Normalize whitespace and camel-case names to lowercase underscores.
+
+    Acronym boundaries are retained, such as ``URLLength`` to ``url_length``.
+
+    Args:
+        seq: Column names to normalize.
+
+    Returns:
+        Normalized names in their original order.
+    """
+    normalized = []
+    for name in seq:
+        name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name.strip())
+        name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+        normalized.append(re.sub(r"\s+", "_", name).lower())
+    return normalized
 
 
 def load_raw_data(
@@ -142,7 +158,7 @@ def ingest_sample_data(
     df = combine_sample_predictions(settings=settings)
     df = validate_data(df=df, use_case=use_case)
 
-    write_partitioned_dataset(
+    write_parquet_dataset(
         df=df,
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,
@@ -187,7 +203,7 @@ def ingest_jsonl_log(
             jsonl_path,
         )
 
-    write_partitioned_dataset(
+    write_parquet_dataset(
         df=df,
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,

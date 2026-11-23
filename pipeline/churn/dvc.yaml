@@ -70,7 +70,7 @@ stages:
           - use_case
     outs:
       - data/${use_case}/partitioned
-  create_oot_split:
+  create_split:
     wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
@@ -83,9 +83,8 @@ stages:
       --split_name ${split.name}
     deps:
       - data/${use_case}/partitioned
-      - src/mlkit/config
-      - src/mlkit/data
-      - src/mlkit/use_cases
+      - use_cases/src/use_cases/${use_case}
+      - src/mlkit
       - pyproject.toml
       - uv.lock
     params:
@@ -93,9 +92,7 @@ stages:
           - use_case
           - split
     outs:
-      - data/${use_case}/splits/${split.name}_test.parquet
-      - data/${use_case}/splits/${split.name}_train.parquet
-      - data/${use_case}/splits/${split.name}.json
+      - data/${use_case}/splits
   train_model:
     wdir: ../..
     cmd: >-
@@ -110,27 +107,24 @@ stages:
       --register-model ${model.register_model}
       --promote-model ${model.promote_model}
     deps:
-      - data/${use_case}/splits/${split.name}_test.parquet
-      - data/${use_case}/splits/${split.name}_train.parquet
-      - data/${use_case}/splits/${split.name}.json
+      - data/${use_case}/splits
       - src/mlkit
+      - use_cases/src/use_cases/${use_case}
       - src/config/${model.classifier}.yaml
       - pyproject.toml
       - uv.lock
     params:
       - pipeline/churn.yaml:
           - use_case
-          - model.classifier
+          - model
           - split.name
           - calibration.method
           - training.n_jobs
           - training.tune_model
-          - model.register_model
-          - model.promote_model
     outs:
       - data/${use_case}/manifests:
           persist: true
-  batch_predict_oot:
+  batch_predict:
     wdir: ../..
     cmd: >-
       DATA_DIR=$PWD/data/${use_case}
@@ -143,6 +137,7 @@ stages:
       - data/${use_case}/splits/${split.name}_test.parquet
       - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:

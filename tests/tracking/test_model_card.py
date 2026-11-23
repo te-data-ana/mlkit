@@ -1,4 +1,6 @@
 import re
+from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 from unittest.mock import patch
 
@@ -28,7 +30,7 @@ def test_build_model_card_from_training_manifest(
 
     assert "# Model Card" in markdown
     assert "## Model Metadata" in markdown
-    assert "## Evaluation on Out-of-Time Test Set" in markdown
+    assert "## Evaluation on out-of-time test set" in markdown
     assert str(context.model.model_version) in markdown
     for feature in context.training.feature_names_out:
         assert f"- {feature}" in markdown
@@ -36,9 +38,11 @@ def test_build_model_card_from_training_manifest(
     assert f"| Classifier Name | {context.training.classifier_name} |" in markdown
     assert "| Calibration Method | none |" in markdown
     assert "| Threshold Selection Strategy | max_f1 |" in markdown
-    assert "| Threshold Selection Data | out_of_time_test |" in markdown
+    assert "| Threshold Selection Data | training_validation |" in markdown
+    assert "| Fitting Cohort Records | 80 |" in markdown
+    assert "| Threshold Cohort Records | 20 |" in markdown
     assert "| Time Column | reference_date |" in markdown
-    assert "maximizing F1 on the out-of-time test set" in markdown
+    assert "maximizing F1 on a training validation holdout" in markdown
     assert f"{context.training.threshold:.6f}" in markdown
     assert re.search(r"\| ROC AUC \| \d\.\d{4} \|", markdown)
     assert re.search(r"\| Calibration Error \(ECE\) \| \d\.\d{4} \|", markdown)
@@ -114,3 +118,47 @@ def test_log_model_card_calls_mlflow(
 
     _, kwargs = mock_log_artifact.call_args
     assert kwargs["artifact_path"] == "documentation"
+
+
+@pytest.mark.unit
+def test_random_split_card_has_no_temporal_claims(
+    training_manifest_factory: Callable[..., TrainingManifest],
+    config_factory: Callable[..., TrainingConfig],
+) -> None:
+    manifest = training_manifest_factory()
+    manifest = replace(
+        manifest,
+        data=replace(
+            manifest.data,
+            split_metadata={
+                "strategy": "stratified_random",
+                "random_state": 42,
+                "train_rows": 80,
+                "fit_rows": 64,
+                "validation_rows": 16,
+                "test_rows": 10,
+                "monitoring_rows": 10,
+                "test_fraction": 0.1,
+                "monitoring_fraction": 0.1,
+            },
+        ),
+        training=replace(manifest.training, threshold_data="training_validation"),
+    )
+    card = ModelCardBuilder().build(config=config_factory(), context=manifest)
+    assert "Stratified random" in card
+    assert "training validation holdout" in card
+    assert "Out-of-Time" not in card
+    assert "Training Start" not in card
+    assert "| Test Fraction | 0.1 |" in card
+    assert "| Monitoring Fraction | 0.1 |" in card
+
+    empty_metadata = dict(
+        manifest.data.split_metadata, monitoring_rows=0, monitoring_fraction=0.0
+    )
+    empty_manifest = replace(
+        manifest, data=replace(manifest.data, split_metadata=empty_metadata)
+    )
+    empty_card = ModelCardBuilder().build(
+        config=config_factory(), context=empty_manifest
+    )
+    assert "| Monitoring Cohort Records | 0 |" in empty_card

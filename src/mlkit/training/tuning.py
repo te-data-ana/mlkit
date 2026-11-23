@@ -1,4 +1,4 @@
-"""Optuna search for classifier hyperparameters using chronological CV."""
+"""Optuna search for classifier hyperparameters using configured CV."""
 
 import logging
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ from threadpoolctl import threadpool_limits
 
 from mlkit.config.schemas import TrainingConfig
 from mlkit.models import MODEL_CATALOG, build_classifier_pipeline, create_model
-from mlkit.training.calibration import make_temporal_cv_splits
+from mlkit.training.calibration import make_cv_splits
 from mlkit.training.features import select_feature_columns
 from mlkit.use_cases import UseCase
 
@@ -28,8 +28,7 @@ class TuningResult:
     metric: str
     n_trials: int
     n_splits: int
-    time_column: str
-    random_state: int
+    time_column: str | None
 
 
 def _suggest_parameters(
@@ -74,12 +73,12 @@ def optimize_hyperparameters(
     train_df: pd.DataFrame,
     n_jobs: int = 1,
 ) -> TuningResult:
-    """Optimize the configured classifier on chronological CV folds.
+    """Optimize the configured classifier on the selected CV folds.
 
     Args:
         use_case: Use-case contract for the training data.
         config: Training configuration with tuning parameters.
-        train_df: Training data split, including the configured time column.
+        train_df: Training data, including timestamps for temporal CV.
         n_jobs: Total CPU job budget for parallel trials.
     Returns:
         Optimized catalog-defined parameters and study metadata.
@@ -115,11 +114,11 @@ def optimize_hyperparameters(
         feature_columns=use_case.feature_columns,
         data_name="Tuning",
     )
-    folds = make_temporal_cv_splits(
+    folds = make_cv_splits(
+        use_case,
         df=train_df,
-        target_column=target_column,
-        time_column=time_column,
         n_splits=tuning.n_splits,
+        random_state=config.random_state,
     )
     metric = roc_auc_score if tuning.metric == "roc_auc" else average_precision_score
 
@@ -159,16 +158,17 @@ def optimize_hyperparameters(
         return float(np.mean(fold_scores))
 
     logger.info(
-        "Starting Optuna study for classifier '%s': %d trials, %d expanding "
-        "window folds, metric '%s'.",
+        "Starting Optuna study for classifier '%s': %d trials, %d %s "
+        "folds, metric '%s'.",
         config.model.classifier,
         tuning.n_trials,
         tuning.n_splits,
+        use_case.split_strategy,
         tuning.metric,
     )
     study = optuna.create_study(
         direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=tuning.random_state),
+        sampler=optuna.samplers.TPESampler(seed=config.random_state),
     )
     with threadpool_limits(limits=1):
         study.optimize(func=objective, n_trials=tuning.n_trials, n_jobs=n_jobs)
@@ -185,5 +185,4 @@ def optimize_hyperparameters(
         n_trials=tuning.n_trials,
         n_splits=tuning.n_splits,
         time_column=time_column,
-        random_state=tuning.random_state,
     )

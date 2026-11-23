@@ -76,7 +76,7 @@ def preprocess_raw_data(
         freq: Frequency string used to generate dates via
             :func:`pandas.date_range`. Defaults to ``"MS"`` (month start).
         date_column: Name of the column to add containing the generated date
-            values. Defaults to the use case's time column.
+            values. Defaults to the use case's event time column.
         use_case: Explicit data contract used for validation.
         data_dir: Directory containing the input file and where the output
             file will be written. If ``None``, the raw data directory from
@@ -109,7 +109,7 @@ def preprocess_raw_data(
     df_dates = assign_split_values(
         df=df,
         values=dates,
-        column_name=date_column or use_case.time_column,
+        column_name=date_column or use_case.event_time_column,
     )
 
     output_path = resolved_data_dir / output_csv

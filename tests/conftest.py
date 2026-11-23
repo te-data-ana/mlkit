@@ -67,8 +67,11 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 time_column="reference_date",
                 split_name="oot_26q1",
                 split_metadata={
+                    "strategy": "temporal",
                     "train_rows": 100,
                     "test_rows": 25,
+                    "fit_rows": 80,
+                    "validation_rows": 20,
                     "train_start": "2025-01-01T00:00:00",
                     "train_end": "2025-12-31T00:00:00",
                     "test_start": "2026-01-01T00:00:00",
@@ -85,7 +88,7 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 n_jobs=1,
                 calibration="none",
                 threshold_strategy="max_f1",
-                threshold_data="out_of_time_test",
+                threshold_data="training_validation",
                 threshold=0.5,
             ),
             evaluation=ManifestEvaluation(metrics=vars(evaluation)),
@@ -287,7 +290,7 @@ def generated_training_df() -> pd.DataFrame:
             ],
             "Churn": [1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
         },
-        index=pd.Index(range(1001, 1013), name="customerid"),
+        index=pd.Index(range(1001, 1013), name="customer_id"),
     )
 
 
@@ -295,7 +298,7 @@ def generated_training_df() -> pd.DataFrame:
 def generated_training_csv(tmp_path: Path, generated_training_df: pd.DataFrame) -> Path:
     """Write generated training data to a temporary CSV file."""
     path = tmp_path / "training.csv"
-    generated_training_df.to_csv(path)
+    generated_training_df.rename_axis("CustomerID").to_csv(path)
     return path
 
 
@@ -305,7 +308,7 @@ def generated_inference_csv(
 ) -> Path:
     """Write generated inference data to a temporary CSV file."""
     path = tmp_path / "inference.csv"
-    generated_training_df.drop(columns=["Churn"]).to_csv(path)
+    generated_training_df.drop(columns=["Churn"]).rename_axis("CustomerID").to_csv(path)
     return path
 
 
@@ -341,6 +344,7 @@ def sample_config_yaml(mlflow_test_setup: dict[str, Any]) -> Path:
                 },
                 "threshold": {
                     "strategy": "max_f1",
+                    "validation_fraction": 0.4,
                 },
                 "promotion": {
                     "min_delta": 0.005,
@@ -389,15 +393,15 @@ def registered_model(
     df = generated_training_df.copy().reset_index(drop=True)
     df["reference_date"] = pd.date_range("2026-01-01", periods=len(df))
 
-    storage.write_partitioned_dataset(
+    storage.write_parquet_dataset(
         df=df,
         dataset_name="integration",
         timestamp_column="reference_date",
     )
 
     _ = splitting.create_time_based_split(
-        dataset_name="integration",
-        timestamp_column="reference_date",
+        use_case=CHURN_USE_CASE,
+        df=df,
         start_date="2026-01-01",
         split_date="2026-01-06",
         end_date="2026-01-10",

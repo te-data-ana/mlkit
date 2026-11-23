@@ -107,6 +107,7 @@ def test_preprocess_raw_data_creates_output_file(
     result = pd.read_csv(output_path)
 
     assert "reference_date" in result.columns
+    assert result["customer_id"].tolist() == list(range(1001, 1013))
 
 
 @pytest.mark.unit

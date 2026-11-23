@@ -461,6 +461,108 @@ def test_build_monitoring_report_can_select_an_exact_model_version(
     assert report.summary[core.MODEL_VERSION_COLUMN].unique().tolist() == [2]
 
 
+@pytest.mark.integration
+@pytest.mark.filterwarnings(
+    "ignore:'future.no_silent_downcasting' is deprecated",
+    "ignore:The resulting number of chunks is too low.",
+)
+def test_undated_reference_has_one_baseline_and_monthly_drift(
+    valid_reference_df: pd.DataFrame,
+) -> None:
+    use_case = replace(
+        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+    )
+    reference = pd.concat([valid_reference_df] * 100, ignore_index=True).drop(
+        columns="reference_date"
+    )
+    analysis = reference.iloc[:180].drop(columns="churn").copy()
+    analysis["timestamp"] = pd.to_datetime(["2026-02-01"] * 90 + ["2026-03-01"] * 90)
+    analysis["latency_ms"] = 10.0
+    report = core.build_monitoring_report(
+        reference,
+        analysis,
+        use_case=use_case,
+        errors=pd.DataFrame(),
+        model_version=1,
+    )
+
+    baseline = report.summary.loc[report.summary["period"] == "reference"]
+    monthly = report.summary.loc[report.summary["period"] == "analysis"]
+    assert len(baseline) == 1
+    assert pd.isna(baseline["timestamp"].iloc[0])
+    assert baseline["prediction_count"].iloc[0] == 300
+    assert monthly["timestamp"].tolist() == list(
+        pd.to_datetime(["2026-02-01", "2026-03-01"])
+    )
+    assert monthly["prediction_count"].tolist() == [90, 90]
+    assert monthly["cbpe_roc_auc"].notna().all()
+    assert monthly["univariate_drift_alert_count"].notna().all()
+    assert monthly["reconstruction_drift_alert_count"].notna().all()
+
+
+@pytest.mark.unit
+def test_undated_reference_rejects_mixed_dates_and_too_few_rows(
+    valid_reference_df: pd.DataFrame, valid_analysis_df: pd.DataFrame
+) -> None:
+    use_case = replace(
+        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+    )
+    reference = valid_reference_df.drop(columns="reference_date")
+    analysis = valid_analysis_df.rename(columns={"reference_date": "timestamp"})
+    analysis["latency_ms"] = 10.0
+    with pytest.raises(ValueError, match="missing timestamps"):
+        core.build_monitoring_report(
+            reference.assign(timestamp=[pd.NaT, "2026-01-01", pd.NaT]),
+            analysis,
+            use_case=use_case,
+            drift=False,
+        )
+    with pytest.raises(ValueError, match="at least six rows per model"):
+        core.build_monitoring_report(
+            reference.iloc[:5], analysis, use_case=use_case, drift=True
+        )
+    with pytest.raises(ValueError, match="analysis data contains missing timestamps"):
+        core.build_monitoring_report(
+            reference,
+            analysis.assign(timestamp=[pd.NaT, "2026-02-01"]),
+            use_case=use_case,
+            drift=False,
+        )
+
+
+@pytest.mark.unit
+def test_undated_reference_filters_model_versions(
+    valid_reference_df: pd.DataFrame, valid_analysis_df: pd.DataFrame
+) -> None:
+    use_case = replace(
+        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+    )
+    reference = valid_reference_df.drop(columns="reference_date")
+    analysis = valid_analysis_df.rename(columns={"reference_date": "timestamp"})
+    analysis["latency_ms"] = 10.0
+    report = core.build_monitoring_report(
+        pd.concat([reference, reference.assign(model_version=2)]),
+        pd.concat([analysis, analysis.assign(model_version=2)]),
+        use_case=use_case,
+        drift=False,
+        model_version=2,
+    )
+    assert report.summary["model_version"].tolist() == [2, 2]
+    assert (
+        report.summary.loc[report.summary.period == "reference", "timestamp"]
+        .isna()
+        .all()
+    )
+
+
+@pytest.mark.unit
+def test_undated_chunker_creates_exactly_three_balanced_chunks() -> None:
+    df = pd.DataFrame({"timestamp": pd.NaT, "value": range(10)})
+    chunks = core._UndatedReferenceChunker("timestamp").split(df)
+    assert [len(chunk.data) for chunk in chunks] == [2, 2, 2, 2, 1, 1]
+    assert all(chunk.start_datetime is None for chunk in chunks)
+
+
 @pytest.mark.unit
 @pytest.mark.filterwarnings(
     "ignore:'future.no_silent_downcasting' is deprecated",

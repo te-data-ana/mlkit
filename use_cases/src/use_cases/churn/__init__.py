@@ -7,10 +7,11 @@ CHURN_USE_CASE = UseCase(
     name="churn",
     target_column="churn",
     time_column="reference_date",
+    split_strategy="temporal",
     feature_schema=ChurnInputFeatures,
     feature_builder_factory=ChurnFeatureBuilder,
-    index_column="customerid",
-    metadata_fields={"customerid": int},
+    index_column="customer_id",
+    metadata_fields={"customer_id": int},
 )
 
 __all__ = ["CHURN_USE_CASE", "ChurnFeatureBuilder", "ChurnInputFeatures"]

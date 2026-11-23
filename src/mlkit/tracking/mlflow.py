@@ -103,13 +103,14 @@ def log_experiment_result(
     # log classifier and its hyper-parameters
     mlflow.log_params(result.classifier_config)
     # log data parameters
-    mlflow.log_params(
-        {
-            "use_case": use_case.name,
-            "column_target": use_case.target_column,
-            "column_time": use_case.time_column,
-        }
-    )
+    data_parameters = {
+        "use_case": use_case.name,
+        "column_target": use_case.target_column,
+        "split_strategy": use_case.split_strategy,
+    }
+    if use_case.time_column is not None:
+        data_parameters["column_time"] = use_case.time_column
+    mlflow.log_params(data_parameters)
     # log preprocessing hyper-parameters
     mlflow.log_params(
         {
@@ -129,6 +130,8 @@ def log_experiment_result(
         "threshold": result.threshold,
         "threshold_strategy": config.threshold.strategy,
         "threshold_data": result.threshold_data,
+        "threshold_validation_fraction": config.threshold.validation_fraction,
+        "training_random_state": config.random_state,
     }
     mlflow.log_params(threshold_parameters)
     # log invocation parameters

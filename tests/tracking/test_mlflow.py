@@ -121,6 +121,12 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
     assert "test_size" not in logged_parameters
     assert "data_random_state" not in logged_parameters
     assert "random_state" in logged_parameters
+    assert logged_parameter_values["training_random_state"] == 26
+    assert logged_parameter_values["split_strategy"] == "temporal"
+    assert "cv_strategy" not in logged_parameters
+    assert logged_parameter_values["threshold_validation_fraction"] == 0.2
+    assert "tuning_random_state" not in logged_parameters
+    assert "threshold_random_state" not in logged_parameters
     assert logged_parameter_values["use_case"] == "churn"
     assert "threshold" in logged_parameters
     assert "calibration_method" in logged_parameters
@@ -254,7 +260,7 @@ def test_logged_calibrated_model_can_be_reloaded(
             fitted_pipeline.named_steps["preprocessor"].get_feature_names_out().tolist()
         ),
         threshold=0.5,
-        threshold_data="out_of_time_test",
+        threshold_data="training_validation",
         calibration_figure=Figure(),
     )
     config_path = tmp_path / f"{method}.yaml"
@@ -291,4 +297,4 @@ def test_logged_calibrated_model_can_be_reloaded(
     )
 
     assert probabilities.shape == (len(test_df), 2)
-    assert logged_run.data.params["threshold_data"] == "out_of_time_test"
+    assert logged_run.data.params["threshold_data"] == "training_validation"

@@ -94,7 +94,7 @@ class PredictionLogger:
         self, event: PredictionEvent | PredictionErrorEvent
     ) -> dict[str, Any]:
         record = event.model_dump(mode="json", exclude_none=True)
-        record[self.use_case.time_column] = record.pop("timestamp")
+        record[self.use_case.event_time_column] = record.pop("timestamp")
         return record
 
     @staticmethod

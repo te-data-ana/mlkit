@@ -105,11 +105,11 @@ def test_optimize_hyperparameters_returns_reproducible_study_result(
     config: TrainingConfig = config_factory(classifier="dt")
     config = replace(
         config,
+        random_state=13,
         tuning=TuningConfig(
             n_trials=2,
             n_splits=2,
             metric="roc_auc",
-            random_state=13,
         ),
     )
     study_optimize = optuna.study.Study.optimize
@@ -163,15 +163,15 @@ def test_optimize_hyperparameters_uses_declared_feature_columns(
     config = config_factory(classifier="dt")
     config = replace(
         config,
+        random_state=13,
         tuning=TuningConfig(
             n_trials=1,
             n_splits=2,
             metric="roc_auc",
-            random_state=13,
         ),
     )
     train_df = temporal_sample_training_df.copy()
-    train_df["customerid"] = range(len(train_df))
+    train_df["customer_id"] = range(len(train_df))
     observed_columns: list[list[str]] = []
 
     class PipelineSpy:
@@ -208,11 +208,11 @@ def test_optimize_hyperparameters_uses_decision_function_for_svm(
     config = config_factory(classifier="lsvc")
     config = replace(
         config,
+        random_state=13,
         tuning=TuningConfig(
             n_trials=1,
             n_splits=2,
             metric="roc_auc",
-            random_state=13,
         ),
     )
     train_df = temporal_sample_training_df.copy()

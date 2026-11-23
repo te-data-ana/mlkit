@@ -89,6 +89,13 @@ uv run mlkit create-split \
 This creates `oot-26Q2_train.parquet`, `oot-26Q2_test.parquet`, and split
 metadata in `data/<use_case>/splits`.
 
+`create-split` splits the provided data based on the use-case's split strategy.
+A stratified-random use case instead accepts `--input_parquet` (parquet file
+location relative to the data directory) and `--random_state`.
+`--test_fraction` and `--monitoring_fraction` specify fractions of the entire
+dataset and default to `0.1` each. The remainder is training data. Setting the
+monitoring fraction to `0` writes an empty monitoring file.
+
 ### Reproduce an out-of-time experiment
 
 The [churn pipeline](pipeline/churn/dvc.yaml) adds the selected use case's
@@ -198,6 +205,77 @@ with the CSVs locally; `dvc pull` cannot retrieve them. Likewise, the SQLite
 MLflow database and artifact directory are local. Cross-machine reproduction
 requires sharing both DVC data and MLflow tracking/artifacts.
 
+### PhiUSIIL phishing workflow
+
+The [phishing pipeline](pipeline/phishing/dvc.yaml) downloads UCI dataset 967
+using `ucimlrepo` (the existing `datasets` dependency group), snapshots its
+feature and target DataFrames and metadata, and creates a seeded, stratified
+80% training / 10% test / 10% monitoring split. Model inputs are the dataset's
+50 precomputed numeric URL and webpage features; raw URL, domain, TLD and
+page-title text are not model inputs. Some source features are derived
+probabilities or similarity scores and may contain information from the dataset
+construction process. The UCI labels are inverted: `1` means phishing and `0`
+means legitimate, so positive-class probabilities and metrics refer to phishing.
+
+UCI snapshot preparation is shared across datasets. It normalizes feature and
+target names and retains all columns by default, including multiple or
+non-binary targets. Supply `--use_case` to validate and filter with an existing
+single-binary-target contract. To map target values, `--map-target` accepts a
+normalized target name and JSON scalar source and result values; repeat for
+every value mapping. The phishing pipeline explicitly uses
+`--map-target label 0 1 --map-target label 1 0`.
+
+```bash
+uv run --group datasets mlkit fetch-and-prepare-uci \
+  --dataset-id 967 \
+  --snapshot-dir data/phishing/raw/uci \
+  --output-path data/phishing/prepared.parquet \
+  --use_case phishing \
+  --map-target label 0 1 \
+  --map-target label 1 0
+```
+
+For string labels, quote JSON strings in the shell, for example
+`--map-target species '"setosa"' 0`. The combined command fetches a fresh
+snapshot each time it runs. The separate DVC `create_split` stage reuses the
+prepared Parquet output when only split parameters change.
+
+```bash
+uv run dvc repro pipeline/phishing/dvc.yaml
+uv run dvc repro pipeline/phishing/monitoring/dvc.yaml
+```
+
+The [phishing parameters](pipeline/phishing.yaml) select training and
+monitoring settings. The phishing use-case contract selects stratified random
+cross-validation for optional tuning and calibration. Threshold selection uses
+a separate portion of the training data, and the final model is fitted only on
+the remaining portion.
+Test metrics are evaluated on a separate random test set (out-of-sample data).
+The monitoring pipeline uses test predictions as reference and the independent
+monitoring cohort for simulated API traffic. Test predictions are stored in the
+timestamp-free dataset directory
+`data/phishing/predictions/phishing_<classifier>_<split_name>` and used directly
+as an undated reference. The reference summary has no observation date; drift
+thresholds use six row-based baseline chunks. API sample dates are simulated,
+so drift results are only a workflow demonstration. Monitoring serves 1,000
+records without replacement and therefore needs at least 1,000 monitoring rows.
+Monitoring requires a registered model (`model.register_model: true`).
+Phishing API responses, logs, and monitoring datasets use `timestamp` for event
+time.
+
+The acquisition stage records a local snapshot; DVC cannot detect upstream
+changes automatically. To deliberately refresh it and downstream stages, run
+`uv run dvc repro --force pipeline/phishing/dvc.yaml:fetch_and_prepare_uci`
+followed by `uv run dvc repro pipeline/phishing/dvc.yaml`. Keep the DVC lock
+and cache for the snapshot; fetching a later snapshot is not guaranteed to
+reproduce an older run. The data and local MLflow artifacts are not committed.
+
+Dataset attribution: Prasad, A. and Chandra, S. (2024),
+*PhiUSIIL Phishing URL (Website)*,
+[UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset),
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+[associated paper](https://doi.org/10.1016/j.cose.2023.103545).
+
 ### Train and evaluate a model
 
 Training reads prepared Parquet files from `data/<use_case>/splits`, builds
@@ -260,18 +338,20 @@ Python call (or pass `--tune-model` in the CLI) and configure the search
 budget in its YAML:
 
 ```yaml
+random_state: 26
+
 tuning:
   n_trials: 64
   n_splits: 4
   metric: roc_auc
-  random_state: 26
 ```
 
-Tuning uses deterministic expanding-window cross-validation across the full
-training split. Rows with the same timestamp stay in the same fold. The
-selected use case's time column must be present in the training split, and
-every fold must contain both target classes. The out-of-time test data is held
-out from hyperparameter tuning.
+For use-cases with "temporal" dimension, tuning uses deterministic
+expanding-window cross-validation on the fitting portion of the training split.
+Rows with the same timestamp stay in the same fold. The time column must be
+present, and every fold must contain both target classes.
+Use-cases without "temporal" dimension use stratified random folds instead. The
+random threshold holdout and stratified test split are excluded from tuning.
 
 ### Generate batch predictions
 
@@ -290,13 +370,13 @@ uv run mlkit batch-predict \
   --use_case churn \
   --input_csv inference.csv \
   --output_csv predictions_inference.csv \
-  --index_col customerid
+  --index_col customer_id
 ```
 
-For a partitioned dataset, input and output dataset names are relative to
-`DATA_DIR`. Date bounds must be provided together or omitted together; a
-date-only end bound includes that calendar day. Existing output partitions for
-the months in the result are replaced.
+For Parquet input, file and dataset names are relative to `DATA_DIR`. Date
+bounds must be provided together or omitted together; a date-only end bound
+includes that calendar day. Existing output partitions for the months in the
+result are replaced.
 
 ```bash
 DATA_DIR=$PWD/data/churn \
@@ -308,10 +388,13 @@ uv run mlkit batch-predict \
   --output_dataset batch_predictions
 ```
 
-The partition timestamp defaults to the selected use case's time column; the
-default output dataset is `batch_predictions`. The result includes the input
-features and
-`predicted_probability`, `predicted_class`, `threshold`, and `model_version`.
+The timestamp defaults to the selected use case's time column. For a use case
+without one (such as phishing), input is read without timestamps and output is
+an unpartitioned dataset directory containing `data.parquet`.
+Use `--timestamp_column` to explicitly select a timestamp for partitioning.
+The default output dataset is `batch_predictions`. The result includes the
+input features, `predicted_probability`, `predicted_class`, `threshold`, and
+`model_version`.
 
 To score a specific model version, pass both its registered name and version.
 Alternatively, pass a manifest path relative to `DATA_DIR`:
@@ -373,17 +456,17 @@ curl -X POST http://127.0.0.1:8000/predict \
 ```
 
 An optional `timestamp` query parameter can override the inference time. The
-response and prediction/error logs name the timestamp field using the selected
-use case's `time_column`; the generated API schema reflects that field name.
+response and prediction/error logs use the use-case's time column when set,
+or `timestamp` otherwise; the generated API schema reflects that field name.
 
 The API uses the `MODEL_NAME` and `MODEL_ALIAS` settings (or an explicit model
 version) to load a registered model. The interactive API reference is available
 at <http://127.0.0.1:8000/docs>.
 
-For sample-based API checks, the helper reads and samples the CSV given by
-`--input_csv` (resolved in `data/<use_case>/raw`), sends each row to the
-service, and writes predictions with the input features to the configured
-output directory:
+For sample-based API checks, the helper samples either `--input_csv` (resolved
+under `data/<use_case>/raw`) or `--input_parquet` (resolved under `DATA_DIR`).
+It sends each row to the service and writes predictions with the input features
+to the configured output directory:
 
 ```bash
 uv run python -m mlkit.serving.serve_samples \
@@ -497,11 +580,11 @@ package. The core package owns the `UseCase` base contract and
 [entry-point registry](src/mlkit/use_cases/registry.py), while the included
 implementations live in the dedicated
 [use_cases module](use_cases/src/use_cases). Each use case defines its
-`target_column`, `time_column` and `feature_schema`, as well as optional
-feature-engineering (`feature_builder_factory`), `index_column` and optional
-`metadata_fields`, which map additional retained column names to
-Pydantic-compatible types. Shared training, batch prediction, API, and
-monitoring code consumes this data contract.
+`target_column`, `time_column`, `split_strategy` and `feature_schema`, as
+well as optional feature-engineering (`feature_builder_factory`),
+`index_column` and optional `metadata_fields`, which map additional retained
+column names to Pydantic-compatible types. Shared training, batch prediction,
+API, and monitoring code consumes this data contract.
 
 The `mlkit-use-cases` workspace package exposes churn and phishing use cases
 through `mlkit.use_cases` entry points. `get_use_case()` discovers installed
@@ -522,7 +605,8 @@ To add another use case:
    explicitly when invoking training.
 4. Select the use case explicitly with `--use_case` for data preparation,
    batch prediction, monitoring, serving, and API log ingestion. Dataset and
-   API log timestamps use the selected use case's time column.
+   API log timestamps use the use case's time column, or `timestamp` when it is
+   absent. Temporal use cases require a time column.
 
 Training configurations are not substitutes for schema based input validation:
 each use case owns its own data contract. Models need re-training after
@@ -555,8 +639,8 @@ Training and inference data use the following customer features:
 | `contract_length` | `Monthly`, `Quarterly`, or `Annual` |
 
 For this churn use case, training data also requires a binary `churn` target
-(`0` or `1`). Depending on the workflow, data may also contain `customerid`
-and `reference_date`. CSV loading normalizes column names; `customerid` can be
+(`0` or `1`). Depending on the workflow, data may also contain `customer_id`
+and `reference_date`. CSV loading normalizes column names; `customer_id` can be
 selected as the CSV index.
 
 The churn data contract is validated with Pydantic; see the
@@ -602,6 +686,8 @@ custom feature engineering before preprocessing and classification.
 Example training configuration:
 
 ```yaml
+random_state: 26
+
 model:
   classifier: dc
   classifier_params:
@@ -615,7 +701,6 @@ tuning:
   n_trials: 64
   n_splits: 4
   metric: roc_auc
-  random_state: 26
 
 calibration:
   n_splits: 3
@@ -623,6 +708,7 @@ calibration:
 
 threshold:
   strategy: max_f1
+  validation_fraction: 0.2
 
 promotion:
   min_delta: 0.005
@@ -638,6 +724,10 @@ Pass the required use case with `--use_case` in the CLI or `use_case=` in a
 Python training call. The selected contract supplies the target, time, and
 feature columns used by training.
 
+The top-level `random_state` seeds the threshold holdout, Optuna sampling and
+random cross-validation folds. Classifier `random_state` parameters and
+dataset-split seeds remain independent.
+
 `--n_jobs` sets the total CPU job budget for a run. It defaults to `1`, accepts
 positive integers, and uses `-1` to request all available CPUs. During tuning,
 trials run in parallel while individual estimators use one job; during
@@ -649,8 +739,9 @@ uncalibrated fitting, the classifier uses the budget if it supports `n_jobs`.
 Calibration is selected per run with `--calibration_method` as `none`,
 `sigmoid` (Platt scaling), or `isotonic`; it defaults to `none`. The training
 config YAML sets the number of folds and bins used for calibration. For
-calibrated runs, `CalibratedClassifierCV` uses expanding historical folds: each
-calibration fold is later than the fold's model-fitting data. To compare
+calibrated runs of temporal use-cases, `CalibratedClassifierCV` uses expanding
+historical folds: each calibration fold is later than the fold's model-fitting
+data. Non-temporal use-cases use stratified random folds. To compare
 calibration approaches, run separate experiments with the same data and
 classifier while changing `--calibration_method`.
 
@@ -662,13 +753,15 @@ function.
 
 ### Threshold selection
 
-Calibration and Optuna hyperparameter tuning remain restricted to training data.
-The final estimator is fitted on the full training split. The threshold
-maximizing F1 (`threshold.strategy: max_f1`) is selected from out-of-time test
-predictions before test metrics are computed.
+For every use case, a seeded, stratified random portion of the training split
+is reserved for threshold validation. Tuning, calibration and final fitting
+use only the remaining training records. The F1-maximizing threshold
+(`threshold.strategy: max_f1`) is selected from holdout predictions, and the
+separate test set is used only for evaluation.
 
-Runs log the selected threshold and its OOT selection source as MLflow
-parameters. The reliability diagram is logged under `calibration/`.
+Runs log the selected threshold, its respective holdout fraction share, source
+and training seed as MLflow parameters. The reliability diagram is logged under
+`calibration/`.
 
 ### Evaluation
 

@@ -27,7 +27,6 @@ class TuningConfig:
     n_trials: int = 50
     n_splits: int = 4
     metric: str = "roc_auc"
-    random_state: int = 26
 
 
 @dataclass
@@ -46,11 +45,14 @@ class CalibrationConfig:
 @dataclass
 class ThresholdConfig:
     strategy: str = "max_f1"
+    validation_fraction: float = 0.2
 
     def __post_init__(self) -> None:
         """Validate threshold selection settings."""
         if self.strategy != "max_f1":
             raise ValueError("threshold strategy currently supports only 'max_f1'.")
+        if not 0 < self.validation_fraction < 1:
+            raise ValueError("threshold validation_fraction must be between 0 and 1.")
 
 
 @dataclass
@@ -102,6 +104,7 @@ class PromotionConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     model: ClassifierConfig
+    random_state: int = 26
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     tuning: TuningConfig = field(default_factory=TuningConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)

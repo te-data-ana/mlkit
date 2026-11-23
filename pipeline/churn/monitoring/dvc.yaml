@@ -20,11 +20,15 @@ stages:
       - data/${use_case}/raw/inference.csv
       - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:
       - pipeline/churn.yaml:
           - use_case
+          - split.name
+          - model.classifier
+          - monitoring.sample_date
     outs:
       - data/${use_case}/api_logs:
           persist: true
@@ -38,9 +42,8 @@ stages:
       --dataset_name ${monitoring.analysis_dataset}
     deps:
       - data/${use_case}/api_logs
-      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit/data
-      - src/mlkit/use_cases
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:
@@ -59,9 +62,8 @@ stages:
       --dataset_name ${monitoring.error_dataset}
     deps:
       - data/${use_case}/api_logs
-      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit/data
-      - src/mlkit/use_cases
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:
@@ -91,10 +93,14 @@ stages:
       - data/${use_case}/${monitoring.error_dataset}
       - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:
       - pipeline/churn.yaml:
+          - use_case
+          - model.classifier
+          - split.name
           - monitoring
     outs:
       - data/${use_case}/monitoring/${use_case}_${model.classifier}_${split.name}

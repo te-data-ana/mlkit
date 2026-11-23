@@ -1,3 +1,5 @@
+random_state: 26
+
 model:
   classifier: dc
   classifier_params:
@@ -13,6 +15,7 @@ calibration:
 
 threshold:
   strategy: max_f1
+  validation_fraction: 0.2
 
 promotion:
   min_delta: 0.01

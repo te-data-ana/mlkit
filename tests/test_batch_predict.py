@@ -49,7 +49,7 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
             "--output_csv",
             "predictions.csv",
             "--index_col",
-            "customerid",
+            "customer_id",
             "--use_case",
             "churn",
         ]
@@ -57,7 +57,7 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
 
     load_raw_data.assert_called_once_with(
         file_name="customers.csv",
-        index_col="customerid",
+        index_col="customer_id",
         data_dir=tmp_path / "raw",
     )
     predict.assert_called_once_with(
@@ -322,9 +322,9 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
             api_port=8000,
         ),
     )
-    monkeypatch.setattr(storage, "read_partitioned_dataset", read_dataset)
+    monkeypatch.setattr(storage, "read_parquet_dataset", read_dataset)
     monkeypatch.setattr(batch_predict, "run_batch_prediction", predict)
-    monkeypatch.setattr(storage, "write_partitioned_dataset", write_dataset)
+    monkeypatch.setattr(storage, "write_parquet_dataset", write_dataset)
 
     mlkit.main(
         [
@@ -365,6 +365,107 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
 
 
 @pytest.mark.unit
+def test_batch_predict_cli_scores_timestamp_free_parquet_with_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    training_manifest_factory: TrainingManifest,
+) -> None:
+    from mlkit import tracking
+
+    settings = SimpleNamespace(
+        data_dir=tmp_path, output_dir=tmp_path, api_host="127.0.0.1", api_port=8000
+    )
+    source = pd.DataFrame({"label": [0, 1]})
+    source.to_parquet(tmp_path / "input.parquet", index=False)
+    manifest = training_manifest_factory()
+    predict = Mock(return_value=source.assign(predicted_probability=[0.1, 0.9]))
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(tracking.TrainingManifest, "read", Mock(return_value=manifest))
+    monkeypatch.setattr(batch_predict, "run_batch_prediction", predict)
+
+    mlkit.main(
+        [
+            "batch-predict",
+            "--use_case",
+            "phishing",
+            "--input_dataset",
+            "input.parquet",
+            "--output_dataset",
+            "predictions/phishing_lr_split",
+            "--model_manifest",
+            "manifests/model.json",
+        ]
+    )
+
+    assert predict.call_args.kwargs["use_case"] == get_use_case("phishing")
+    assert predict.call_args.kwargs["manifest"] is manifest
+    pd.testing.assert_frame_equal(predict.call_args.kwargs["df"], source)
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(tmp_path / "predictions/phishing_lr_split"),
+        source.assign(predicted_probability=[0.1, 0.9]),
+    )
+
+
+@pytest.mark.unit
+def test_batch_predict_cli_phishing_timestamp_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    settings = SimpleNamespace(
+        data_dir=tmp_path, output_dir=tmp_path, api_host="127.0.0.1", api_port=8000
+    )
+    source = pd.DataFrame({"timestamp": pd.to_datetime(["2026-01-01"])})
+    source.to_parquet(tmp_path / "input.parquet", index=False)
+    monkeypatch.setattr(mlkit, "ServingSettings", lambda: settings)
+    monkeypatch.setattr(
+        batch_predict, "run_batch_prediction", Mock(return_value=source)
+    )
+    mlkit.main(
+        [
+            "batch-predict",
+            "--use_case",
+            "phishing",
+            "--input_dataset",
+            "input.parquet",
+            "--output_dataset",
+            "predictions",
+            "--timestamp_column",
+            "timestamp",
+        ]
+    )
+    assert (tmp_path / "predictions/year=2026/month=1").is_dir()
+
+
+@pytest.mark.unit
+def test_batch_predict_cli_rejects_timestamp_free_date_bounds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        mlkit,
+        "ServingSettings",
+        lambda: SimpleNamespace(data_dir=tmp_path, output_dir=tmp_path),
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        mlkit.main(
+            [
+                "batch-predict",
+                "--use_case",
+                "phishing",
+                "--input_dataset",
+                "input.parquet",
+                "--model_manifest",
+                "missing.json",
+                "--start_date",
+                "2026-01-01",
+                "--end_date",
+                "2026-02-01",
+            ]
+        )
+    assert exc_info.value.code == 2
+    assert "Date bounds require a timestamp column" in capsys.readouterr().err
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("arguments", "error_message"),
     [
@@ -399,7 +500,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
             "Date bounds can only be used with partitioned input",
         ),
         (
-            ["--input_dataset", "partitioned", "--index_col", "customerid"],
+            ["--input_dataset", "partitioned", "--index_col", "customer_id"],
             "--index_col can only be used with CSV input",
         ),
     ],
@@ -423,7 +524,7 @@ def test_batch_prediction_uses_registered_model(
 ) -> None:
     input_df = data.load_raw_data(
         file_name=generated_inference_csv.name,
-        index_col="customerid",
+        index_col="customer_id",
         data_dir=generated_inference_csv.parent,
     )
 

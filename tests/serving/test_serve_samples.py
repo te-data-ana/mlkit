@@ -53,18 +53,18 @@ def test_load_sample_data_is_reproducible(
 
     result_1 = serve_samples.load_sample_data(
         use_case=CHURN_USE_CASE,
+        settings=settings,
         input_csv="custom.csv",
         sample_size=5,
         random_state=42,
-        settings=settings,
     )
 
     result_2 = serve_samples.load_sample_data(
         use_case=CHURN_USE_CASE,
+        settings=settings,
         input_csv="custom.csv",
         sample_size=5,
         random_state=42,
-        settings=settings,
     )
 
     assert len(result_1) == 5
@@ -75,6 +75,55 @@ def test_load_sample_data_is_reproducible(
         data_dir=settings.data_dir / "raw",
         drop_columns=None,
     )
+
+
+@pytest.mark.unit
+def test_load_sample_data_from_parquet(
+    tmp_path: Path, generated_training_df: pd.DataFrame
+) -> None:
+    use_case = replace(CHURN_USE_CASE, index_column=None)
+    source = generated_training_df.reset_index(drop=True)
+    source.to_parquet(tmp_path / "input.parquet", index=False)
+    settings = ServingSettings(data_dir=tmp_path)
+    kwargs = {
+        "use_case": use_case,
+        "settings": settings,
+        "input_csv": None,
+        "input_parquet": "input.parquet",
+        "sample_size": 5,
+        "random_state": 42,
+        "drop_columns": ["Churn"],
+    }
+    sample = serve_samples.load_sample_data(**kwargs)
+    pd.testing.assert_frame_equal(sample, serve_samples.load_sample_data(**kwargs))
+    assert len(sample) == 5
+    assert "churn" not in sample and "age" in sample
+    with pytest.raises(ValueError, match="larger sample"):
+        serve_samples.load_sample_data(**{**kwargs, "sample_size": len(source) + 1})
+
+
+@pytest.mark.unit
+def test_load_sample_data_rejects_empty_or_missing_parquet(tmp_path: Path) -> None:
+    use_case = replace(CHURN_USE_CASE, index_column=None)
+    settings = ServingSettings(data_dir=tmp_path)
+    source = pd.DataFrame(columns=use_case.feature_columns)
+    source.to_parquet(tmp_path / "empty.parquet", index=False)
+    with pytest.raises(ValueError):
+        serve_samples.load_sample_data(
+            use_case=use_case,
+            settings=settings,
+            input_csv=None,
+            input_parquet="empty.parquet",
+            sample_size=1,
+        )
+    with pytest.raises(FileNotFoundError):
+        serve_samples.load_sample_data(
+            use_case=use_case,
+            settings=settings,
+            input_csv=None,
+            input_parquet="missing.parquet",
+            sample_size=1,
+        )
 
 
 @pytest.mark.unit
@@ -265,6 +314,7 @@ def test_serve_samples_calls_dependencies(
     result = serve_samples.serve_samples(
         use_case=CHURN_USE_CASE,
         input_csv="inference.csv",
+        input_parquet=None,
         sample_size=1,
         random_state=42,
         settings=settings,
@@ -274,10 +324,11 @@ def test_serve_samples_calls_dependencies(
     assert result == expected
     load_sample_data_mock.assert_called_once_with(
         use_case=CHURN_USE_CASE,
+        settings=settings,
         input_csv="inference.csv",
+        input_parquet=None,
         sample_size=1,
         random_state=42,
-        settings=settings,
         drop_columns=None,
     )
     predict_samples_mock.assert_called_once_with(
@@ -378,7 +429,8 @@ def test_stop_api_server_kills_when_timeout_occurs():
 
 
 @pytest.mark.unit
-def test_custom_parser_uses_settings_defaults() -> None:
+def test_custom_parser_uses_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("USE_CASE", raising=False)
     settings = Mock(
         api_host="localhost",
         api_port=8000,
@@ -400,11 +452,14 @@ def test_custom_parser_uses_settings_defaults() -> None:
 
 
 @pytest.mark.unit
-def test_custom_parser_requires_input_csv() -> None:
+def test_custom_parser_requires_exactly_one_input() -> None:
     parser = custom_parser(Mock(api_host="localhost", api_port=8000))
 
     with pytest.raises(SystemExit):
         parser.parse_args([])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--input_csv", "a.csv", "--input_parquet", "b.parquet"])
+    assert parser.parse_args(["--input_parquet", "input.parquet"]).input_csv is None
 
 
 @pytest.mark.unit
@@ -458,8 +513,10 @@ def test_configure_model_environment_from_model_name_version(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("random_state", [0, 42])
 def test_main_starts_api_serves_samples_and_stops_server(
     monkeypatch: pytest.MonkeyPatch,
+    random_state: int,
 ) -> None:
     """Test that main orchestrates API startup, serving, and shutdown."""
 
@@ -471,8 +528,9 @@ def test_main_starts_api_serves_samples_and_stops_server(
     args = Namespace(
         use_case="churn",
         input_csv="inference.csv",
+        input_parquet=None,
         sample_size=100,
-        random_state=42,
+        random_state=random_state,
         timestamp=datetime(2026, 9, 30, tzinfo=UTC),
         drop_columns=["reference_date"],
         host="localhost",
@@ -542,10 +600,11 @@ def test_main_starts_api_serves_samples_and_stops_server(
         use_case=CHURN_USE_CASE,
         input_csv="inference.csv",
         sample_size=100,
-        random_state=42,
+        random_state=random_state,
         settings=mock_settings,
         timestamp=args.timestamp,
         drop_columns=["reference_date"],
+        input_parquet=None,
     )
 
     stop_api_server_mock.assert_called_once_with(mock_process)
@@ -597,6 +656,7 @@ def test_main_stops_server_when_serving_fails(
     args = Namespace(
         use_case="churn",
         input_csv="inference.csv",
+        input_parquet=None,
         sample_size=100,
         random_state=42,
         timestamp=None,

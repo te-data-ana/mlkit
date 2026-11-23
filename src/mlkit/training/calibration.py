@@ -1,15 +1,14 @@
-"""Time-aware calibration fitting and fold construction."""
-
-from collections.abc import Sequence
+"""Calibration fitting and temporal or stratified fold construction."""
 
 import numpy as np
 import pandas as pd
 from joblib import parallel_backend
 from sklearn.base import BaseEstimator
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
 
 from mlkit.training.features import select_feature_columns
+from mlkit.use_cases import UseCase
 
 
 def make_temporal_cv_splits(
@@ -74,45 +73,117 @@ def make_temporal_cv_splits(
     return splits
 
 
+def make_stratified_random_cv_splits(
+    df: pd.DataFrame,
+    *,
+    target_column: str,
+    n_splits: int,
+    random_state: int = 42,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Create seeded stratified cross-validation folds.
+
+    Args:
+        df: Training records.
+        target_column: Binary target column.
+        n_splits: Number of folds.
+        random_state: Seed for shuffled folds.
+
+    Returns:
+        Positional train and validation indices for each fold.
+
+    Raises:
+        ValueError: If the target or folds are invalid.
+    """
+    if target_column not in df or df[target_column].isna().any():
+        raise ValueError("Stratified CV requires a non-missing target.")
+    counts = df[target_column].value_counts()
+    if set(counts.index) != {0, 1} or n_splits < 2 or counts.min() < n_splits:
+        raise ValueError("Stratified CV requires both classes in every fold.")
+    splitter = StratifiedKFold(
+        n_splits=n_splits, shuffle=True, random_state=random_state
+    )
+    return list(splitter.split(df, df[target_column]))
+
+
+def make_cv_splits(
+    use_case: UseCase,
+    df: pd.DataFrame,
+    *,
+    n_splits: int,
+    random_state: int = 42,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Create cross-validation folds using the use-case split strategy.
+
+    Args:
+        use_case: Contract defining the target, strategy, and optional time column.
+        df: Training records.
+        n_splits: Number of folds.
+        random_state: Seed used for stratified random folds.
+
+    Returns:
+        Positional train and validation indices for each fold.
+
+    Raises:
+        ValueError: If the strategy or its required data is invalid.
+    """
+    if use_case.split_strategy == "temporal":
+        if use_case.time_column is None:
+            raise ValueError("Temporal CV requires a time column.")
+        return make_temporal_cv_splits(
+            df,
+            target_column=use_case.target_column,
+            time_column=use_case.time_column,
+            n_splits=n_splits,
+        )
+    if use_case.split_strategy == "stratified_random":
+        return make_stratified_random_cv_splits(
+            df,
+            target_column=use_case.target_column,
+            n_splits=n_splits,
+            random_state=random_state,
+        )
+    raise ValueError(f"Unknown cross-validation strategy: {use_case.split_strategy}")
+
+
 def fit_estimator_with_calibration(
     estimator: BaseEstimator,
     train_df: pd.DataFrame,
     *,
-    target_column: str,
-    time_column: str,
-    feature_columns: Sequence[str],
+    use_case: UseCase,
     method: str = "none",
     n_splits: int = 4,
     n_jobs: int = 1,
+    random_state: int = 42,
 ) -> BaseEstimator:
-    """Fit an estimator, optionally using historical-only calibration folds.
+    """Fit an estimator, optionally calibrating with the selected fold strategy.
 
     Args:
         estimator: Unfitted scikit-learn estimator or pipeline.
-        train_df: Full training data containing target and time columns.
-        target_column: Column containing the target labels.
-        time_column: Column defining chronological order.
+        train_df: Training data with target and, for temporal CV, timestamps.
+        use_case: Contract defining targets, features, and split strategy.
         method: ``none``, ``sigmoid``, or ``isotonic``.
-        n_splits: Number of expanding-window calibration folds.
-        feature_columns: Use-case columns used as model inputs.
+        n_splits: Number of calibration folds.
         n_jobs: Total job budget for calibration folds.
+        random_state: Seed used by stratified random folds.
 
     Returns:
         A fitted estimator, wrapped in ``CalibratedClassifierCV`` when enabled.
 
     Raises:
         ValueError: If required model features are missing, the method is
-            unsupported, or temporal folds are invalid.
+            unsupported, or calibration folds are invalid.
     """
-    if target_column not in train_df.columns:
-        raise ValueError(f"Temporal CV target column '{target_column}' is missing.")
+    if use_case.target_column not in train_df.columns:
+        raise ValueError(
+            f"Training target column '{use_case.target_column}' is missing."
+        )
 
     X_train = select_feature_columns(
         df=train_df,
-        feature_columns=feature_columns,
+        feature_columns=use_case.feature_columns,
         data_name="Training",
     )
-    y_train = train_df[target_column]
+    y_train = train_df[use_case.target_column]
 
     if method == "none":
         if not hasattr(estimator, "predict_proba"):
@@ -127,11 +198,11 @@ def fit_estimator_with_calibration(
             "Calibration method must be one of 'none', 'sigmoid', or 'isotonic'."
         )
 
-    splits = make_temporal_cv_splits(
+    splits = make_cv_splits(
+        use_case,
         df=train_df,
-        target_column=target_column,
-        time_column=time_column,
         n_splits=n_splits,
+        random_state=random_state,
     )
     calibrated = CalibratedClassifierCV(
         estimator=estimator,

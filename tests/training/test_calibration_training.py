@@ -1,13 +1,29 @@
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import BaseModel
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC, LinearSVC
 
+from mlkit.models.features import IdentityFeatureBuilder
 from mlkit.training.calibration import (
     fit_estimator_with_calibration,
     make_temporal_cv_splits,
+)
+from mlkit.use_cases import UseCase
+
+
+class SignalFeatures(BaseModel):
+    signal: float
+
+
+SIGNAL_USE_CASE = UseCase(
+    name="signal",
+    target_column="target",
+    time_column="reference_date",
+    feature_schema=SignalFeatures,
+    feature_builder_factory=IdentityFeatureBuilder,
 )
 
 
@@ -178,9 +194,7 @@ def test_fit_estimator_with_calibration_supports_configured_methods(
     model = fit_estimator_with_calibration(
         estimator=classifier,
         train_df=train_df,
-        target_column="target",
-        time_column="reference_date",
-        feature_columns=("signal",),
+        use_case=SIGNAL_USE_CASE,
         method=method,
         n_splits=3,
     )
@@ -204,8 +218,6 @@ def test_uncalibrated_svm_is_rejected(classifier: LinearSVC | SVC) -> None:
         fit_estimator_with_calibration(
             estimator=classifier,
             train_df=train_df,
-            target_column="target",
-            time_column="reference_date",
-            feature_columns=("signal",),
+            use_case=SIGNAL_USE_CASE,
             method="none",
         )

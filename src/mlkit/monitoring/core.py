@@ -9,7 +9,9 @@ from typing import Any
 
 import mlflow
 import nannyml as nml
+import numpy as np
 import pandas as pd
+from nannyml.chunk import Chunk, Chunker, PeriodBasedChunker
 from sklearn.metrics import precision_score, recall_score, roc_auc_score
 
 from mlkit.config import RuntimeSettings
@@ -23,6 +25,29 @@ PRED_CLASS_COLUMN = "predicted_class"
 PREDICTION_COLUMNS = [PRED_PROBA_COLUMN, PRED_CLASS_COLUMN]
 PERIOD_COLUMN = "period"
 MODEL_VERSION_COLUMN = "model_version"
+UNDATED_REFERENCE_CHUNKS = 6
+
+
+class _UndatedReferenceChunker(Chunker):
+    """Split undated references by rows and dated analysis by month."""
+
+    def __init__(self, time_column: str) -> None:
+        super().__init__()
+        self.time_column = time_column
+
+    def _split(self, data: pd.DataFrame) -> list[Chunk]:
+        if data[self.time_column].isna().all():
+            if len(data) < UNDATED_REFERENCE_CHUNKS:
+                raise ValueError("Undated references need at least six rows.")
+            return [
+                Chunk(key=f"reference_{index}", data=data.iloc[positions])
+                for index, positions in enumerate(
+                    np.array_split(np.arange(len(data)), UNDATED_REFERENCE_CHUNKS)
+                )
+            ]
+        return PeriodBasedChunker(
+            timestamp_column_name=self.time_column, offset="M"
+        ).split(data)
 
 
 def _aggregation_columns(time_column: str) -> list[str]:
@@ -96,7 +121,7 @@ def _event_log_to_df(path: Path | None, event: str, use_case: UseCase) -> pd.Dat
         if not all_records_prediction_events:
             raise ValueError(f"Log '{path}' contains events other than {event}.")
 
-    time_column = use_case.time_column
+    time_column = use_case.event_time_column
     required = {time_column, MODEL_VERSION_COLUMN, "latency_ms"}
     missing = required.difference(df.columns)
     if missing:
@@ -121,6 +146,7 @@ def _prepare_validated_df(
     require_predictions: bool = True,
     require_target: bool = False,
     require_features: bool = False,
+    allow_undated_reference: bool = False,
 ) -> pd.DataFrame:
     """Normalize and validate a monitoring DataFrame for a single cohort.
 
@@ -135,6 +161,7 @@ def _prepare_validated_df(
         require_target: Whether the target column is required and must contain
             both classes.
         require_features: Whether feature columns must be present and validated.
+        allow_undated_reference: Whether an entirely undated reference is permitted.
 
     Returns:
         The validated DataFrame with standardized source, period, timestamp, and
@@ -158,7 +185,9 @@ def _prepare_validated_df(
             )
         _ = validate_data(df, use_case)
 
-    time_column = use_case.time_column
+    time_column = use_case.event_time_column
+    if allow_undated_reference and time_column not in df:
+        df[time_column] = pd.NaT
     required = set(_aggregation_columns(time_column=time_column))
     if require_predictions:
         required.update(PREDICTION_COLUMNS)
@@ -191,11 +220,12 @@ def _prepare_validated_df(
             f"{name} data must contain both target classes for binary classification."
         )
 
-    df[time_column] = (
-        pd.to_datetime(df[time_column], errors="raise")
-        .dt.to_period("M")
-        .dt.to_timestamp()
-    )
+    timestamps = pd.to_datetime(df[time_column], errors="raise")
+    if timestamps.isna().any() and not (
+        allow_undated_reference and timestamps.isna().all()
+    ):
+        raise ValueError(f"{name} data contains missing timestamps.")
+    df[time_column] = timestamps.dt.to_period("M").dt.to_timestamp()
 
     df[MODEL_VERSION_COLUMN] = df[MODEL_VERSION_COLUMN].astype(int)
 
@@ -267,7 +297,7 @@ def _drift_alert_summary(
     if not alert_columns:
         raise KeyError(f"No 'alert' columns in {calculator_name} results.")
 
-    dates = pd.to_datetime(raw[date_columns[0]], errors="coerce")
+    dates = pd.to_datetime(raw[date_columns[0]], errors="coerce", format="mixed")
     alerts = raw[alert_columns].fillna(False).astype(bool).sum(axis=1)
 
     return pd.DataFrame(
@@ -313,7 +343,7 @@ def _cbpe_summary(
     if not value_columns:
         raise KeyError(f"No estimated metric values in {calculator_name} results.")
 
-    dates = pd.to_datetime(raw[date_columns[0]], errors="coerce")
+    dates = pd.to_datetime(raw[date_columns[0]], errors="coerce", format="mixed")
 
     summary = pd.DataFrame(
         {
@@ -432,8 +462,13 @@ def _calculate_version_drift(
     """
 
     monitoring = pd.concat([analysis, errors], ignore_index=True)
-    time_column = use_case.time_column
+    time_column = use_case.event_time_column
     aggregation_columns = _aggregation_columns(time_column=time_column)
+    undated_reference = reference[time_column].isna().all()
+    if undated_reference and len(reference) < UNDATED_REFERENCE_CHUNKS:
+        raise ValueError("Undated references need at least six rows per model.")
+    chunker = _UndatedReferenceChunker(time_column) if undated_reference else None
+    chunk_period = None if undated_reference else "M"
 
     continuous_features = (
         monitoring[list(use_case.feature_columns)]
@@ -458,7 +493,8 @@ def _calculate_version_drift(
                 y_true=use_case.target_column,
                 timestamp_column_name=time_column,
                 metrics=["precision", "recall", "roc_auc"],
-                chunk_period="M",
+                chunker=chunker,
+                chunk_period=chunk_period,
             )
             .fit(reference)
             .estimate(analysis)
@@ -476,7 +512,8 @@ def _calculate_version_drift(
         nml.DataReconstructionDriftCalculator(
             column_names=list(use_case.feature_columns),
             timestamp_column_name=time_column,
-            chunk_period="M",
+            chunker=chunker,
+            chunk_period=chunk_period,
         )
         .fit(reference)
         .calculate(monitoring)
@@ -496,7 +533,8 @@ def _calculate_version_drift(
             treat_as_numerical=continuous_features,
             treat_as_categorical=categorical_features,
             timestamp_column_name=time_column,
-            chunk_period="M",
+            chunker=chunker,
+            chunk_period=chunk_period,
             continuous_methods=["jensen_shannon"],
             categorical_methods=["jensen_shannon"],
         )
@@ -512,6 +550,8 @@ def _calculate_version_drift(
         )
     )
 
+    if undated_reference:
+        alerts = [alert.loc[alert[PERIOD_COLUMN] == "analysis"] for alert in alerts]
     alerts_combined = reduce(
         lambda left, right: pd.merge(
             left,
@@ -612,7 +652,7 @@ def build_monitoring_report(
     if source_analysis not in {"batch", "api"}:
         raise ValueError("``source_analysis`` must be either 'batch' or 'api'.")
 
-    time_column = use_case.time_column
+    time_column = use_case.event_time_column
     aggregation_columns = _aggregation_columns(time_column=time_column)
 
     reference_df = _prepare_validated_df(
@@ -623,6 +663,7 @@ def build_monitoring_report(
         require_predictions=True,
         require_target=True,
         require_features=drift,
+        allow_undated_reference=use_case.time_column is None,
     )
     analysis_df = _prepare_validated_df(
         df=analysis.copy(),
@@ -700,7 +741,7 @@ def build_monitoring_report(
     # reference and analysis periods should not overlapp
     ref_max = reference_df[time_column].max()
     ana_min = min(analysis_df[time_column].min(), errors_df[time_column].min())
-    if ana_min <= ref_max:
+    if pd.notna(ref_max) and ana_min <= ref_max:
         logger.warning(
             f"Reference and analysis periods overlap: {ref_max=} >= {ana_min=}"
         )

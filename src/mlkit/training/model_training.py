@@ -8,6 +8,7 @@ from joblib import effective_n_jobs
 from matplotlib.figure import Figure
 from sklearn.base import BaseEstimator
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
 from threadpoolctl import threadpool_limits
 
 from mlkit.config.schemas import TrainingConfig
@@ -41,10 +42,43 @@ class TrainingResult:
     calibration_figure: Figure
 
 
+def split_threshold_validation(
+    train_df: pd.DataFrame, target_column: str, config: TrainingConfig
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Reserve stratified training rows for independent threshold selection.
+
+    Args:
+        train_df: Training records.
+        target_column: Binary target used for stratification.
+        config: Validation fraction and random seed.
+
+    Returns:
+        The fitting and threshold-validation subsets.
+
+    Raises:
+        ValueError: If a stratified split cannot keep both classes in each subset.
+    """
+    fit_df, validation_df = train_test_split(
+        train_df,
+        test_size=config.threshold.validation_fraction,
+        random_state=config.random_state,
+        stratify=train_df[target_column],
+    )
+    if any(
+        set(part[target_column].unique()) != {0, 1} for part in (fit_df, validation_df)
+    ):
+        raise ValueError(
+            "Threshold fitting and validation data must each contain both "
+            "binary classes."
+        )
+    return fit_df, validation_df
+
+
 def train_model(
     use_case: UseCase,
     config: TrainingConfig,
-    train_df: pd.DataFrame,
+    fit_df: pd.DataFrame,
+    validation_df: pd.DataFrame,
     test_df: pd.DataFrame,
     model_params_override: Mapping[str, Any] | None = None,
     calibration_method: str = "none",
@@ -56,7 +90,8 @@ def train_model(
         use_case: Explicit data contract to be used for model training.
         config: Training, feature, preprocessing, model, calibration-fold,
             threshold, promotion, and registry settings.
-        train_df: Validated training DataFrame containing features and target.
+        fit_df: Validated fitting DataFrame containing features and target.
+        validation_df: Independent training holdout for threshold selection.
         test_df: Validated test DataFrame containing features and target.
         model_params_override: Optional model parameters overriding configured
             values for this fit.
@@ -83,15 +118,20 @@ def train_model(
         raise ValueError("n_jobs must be a positive integer or -1.")
     logger = logging.getLogger(__name__)
     target_column = use_case.target_column
-    time_column = use_case.time_column
 
     try:
         X_train = select_feature_columns(
-            df=train_df,
+            df=fit_df,
             feature_columns=use_case.feature_columns,
             data_name="Training",
         )
-        y_train = train_df[target_column]
+        y_train = fit_df[target_column]
+        X_validation = select_feature_columns(
+            df=validation_df,
+            feature_columns=use_case.feature_columns,
+            data_name="Validation",
+        )
+        y_validation = validation_df[target_column]
         X_test = select_feature_columns(
             df=test_df,
             feature_columns=use_case.feature_columns,
@@ -101,7 +141,7 @@ def train_model(
         if y_train.nunique() != 2:
             raise ValueError("Training data must contain both target classes.")
         logger.info(
-            "Prepared training data: %d rows and %d features; out-of-time test "
+            "Prepared training data: %d rows and %d features; test "
             "data: %d rows and %d features (target '%s').",
             len(X_train),
             X_train.shape[1],
@@ -144,15 +184,25 @@ def train_model(
         with threadpool_limits(limits=thread_limit), Timer() as fit_timer:
             trained_model = fit_estimator_with_calibration(
                 estimator=model_pipeline,
-                train_df=train_df,
-                target_column=target_column,
-                time_column=time_column,
-                feature_columns=use_case.feature_columns,
+                train_df=fit_df,
+                use_case=use_case,
                 method=calibration_method,
                 n_splits=config.calibration.n_splits,
                 n_jobs=n_jobs,
+                random_state=config.random_state,
             )
         logger.info("Model pipeline fit completed in %.3f seconds.", fit_timer.duration)
+
+        logger.info(
+            "Selecting decision threshold with strategy '%s' on training validation.",
+            config.threshold.strategy,
+        )
+        y_proba_validation = trained_model.predict_proba(X_validation)[:, 1]
+        threshold = select_f1_threshold(
+            y_true=y_validation,
+            y_prob=y_proba_validation,
+        )
+        logger.info("Selected decision threshold %.6f.", threshold)
 
         fitted_base_pipeline = (
             trained_model.calibrated_classifiers_[0].estimator
@@ -176,17 +226,7 @@ def train_model(
             "Prediction on test set completed in %.3f seconds.", pred_timer.duration
         )
 
-        logger.info(
-            "Selecting decision threshold with strategy '%s' on out-of-time test data.",
-            config.threshold.strategy,
-        )
-        threshold = select_f1_threshold(y_test, y_proba)
-        logger.info(
-            "Selected decision threshold %.6f.",
-            threshold,
-        )
-
-        logger.info("Evaluating model on out-of-time test data.")
+        logger.info("Evaluating model on test data.")
         metrics = evaluate_model(
             y_true=y_test,
             y_prob=y_proba,
@@ -212,7 +252,7 @@ def train_model(
             feature_names_in=list(X_train.columns),
             feature_names_out=feature_names_out,
             threshold=threshold,
-            threshold_data="out_of_time_test",
+            threshold_data="training_validation",
             calibration_figure=calibration_figure,
         )
     except Exception:

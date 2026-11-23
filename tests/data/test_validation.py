@@ -14,7 +14,7 @@ CHURN_USE_CASE = get_use_case("churn")
 def ingested_df(generated_training_csv) -> pd.DataFrame:
     return load_raw_data(
         generated_training_csv,
-        index_col="customerid",
+        index_col="customer_id",
     )
 
 
@@ -100,7 +100,7 @@ def test_validate_data_preserves_index_metadata_and_coerced_values(
     assert result.index.equals(df.index)
     assert result["age"].tolist() == [18, 115]
     assert result["churn"].tolist() == [0, 1]
-    assert result["customerid"].tolist() == df["customerid"].tolist()
+    assert result["customer_id"].tolist() == df["customer_id"].tolist()
     assert pd.api.types.is_datetime64_any_dtype(result["reference_date"])
     assert "ignored" not in result
     assert "ignored" in df
@@ -113,7 +113,7 @@ def test_validate_data_preserves_index_metadata_and_coerced_values(
         ("age", pd.NA),
         ("churn", None),
         ("churn", 2),
-        ("customerid", "invalid"),
+        ("customer_id", "invalid"),
         ("reference_date", "not-a-date"),
     ],
 )

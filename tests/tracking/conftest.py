@@ -27,6 +27,6 @@ def mock_training_result() -> TrainingResult:
         feature_names_in=["a", "b"],
         feature_names_out=["a", "b", "c"],
         threshold=0.4,
-        threshold_data="out_of_time_test",
+        threshold_data="training_validation",
         calibration_figure=Figure(),
     )

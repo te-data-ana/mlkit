@@ -1,3 +1,5 @@
+random_state: 26
+
 model:
   classifier: rf
   classifier_params:
@@ -11,7 +13,6 @@ tuning:
   n_trials: 64
   n_splits: 4
   metric: roc_auc
-  random_state: 26
 
 calibration:
   n_splits: 3
@@ -19,6 +20,7 @@ calibration:
 
 threshold:
   strategy: max_f1
+  validation_fraction: 0.2
 
 promotion:
   min_delta: 0.005

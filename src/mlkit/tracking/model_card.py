@@ -39,6 +39,34 @@ class ModelCardBuilder:
         metrics = context.evaluation.metrics
         decision = context.lifecycle.promotion_decision
         split_metadata = context.data.split_metadata
+        strategy = split_metadata["strategy"]
+        random_split = strategy == "stratified_random"
+        detail_rows = [
+            f"| Split Strategy | {str(strategy).replace('_', ' ').capitalize()} |"
+        ]
+        if not random_split and context.data.time_column is not None:
+            detail_rows.append(f"| Time Column | {context.data.time_column} |")
+        for key, label in (
+            ("train_start", "Training Start"),
+            ("train_end", "Training End"),
+            ("test_start", "Test Start"),
+            ("test_end", "Test End"),
+            ("random_state", "Split Seed"),
+            ("test_fraction", "Test Fraction"),
+            ("monitoring_fraction", "Monitoring Fraction"),
+            ("monitoring_rows", "Monitoring Cohort Records"),
+        ):
+            if key in split_metadata:
+                detail_rows.append(f"| {label} | {split_metadata[key]} |")
+        split_rows = "\n".join(detail_rows)
+        evaluation_name = (
+            "random stratified test set" if random_split else "out-of-time test set"
+        )
+        threshold_note = (
+            "The decision threshold was selected by maximizing F1 on a training "
+            f"validation holdout (fraction {config.threshold.validation_fraction}). "
+            "The estimator was fitted only on the remaining training rows."
+        )
 
         features = "\n".join(
             f"- {feature}" for feature in context.training.feature_names_out
@@ -95,18 +123,16 @@ Predict {context.model.use_case} probability / class label.
 
 ## Training Dataset
 
-Trained on historical {context.model.use_case} data.
+Trained on {context.model.use_case} data.
 
 | Property | Value |
 |----------|-------|
 | Target Column | {context.data.target_column} |
-| Time Column | {context.data.time_column} |
-| Training Records | {split_metadata["train_rows"]} |
-| Training Start | {split_metadata["train_start"]} |
-| Training End | {split_metadata["train_end"]} |
-| Test Records | {split_metadata["test_rows"]} |
-| Test Start | {split_metadata["test_start"]} |
-| Test End | {split_metadata["test_end"]} |
+| Training Cohort Records | {split_metadata["train_rows"]} |
+| Fitting Cohort Records | {split_metadata["fit_rows"]} |
+| Threshold Cohort Records | {split_metadata["validation_rows"]} |
+| Test Cohort Records | {split_metadata["test_rows"]} |
+{split_rows}
 | Feature Count | {context.training.feature_count} |
 
 ## Model Features
@@ -129,9 +155,9 @@ Trained on historical {context.model.use_case} data.
 | Threshold Selection Data | {context.training.threshold_data} |
 | Optimal Class Threshold | {context.training.threshold:.6f} |
 
-Note: The decision threshold was selected by maximizing F1 on the out-of-time test set.
+Note: {threshold_note}
 
-## Evaluation on Out-of-Time Test Set
+## Evaluation on {evaluation_name}
 
 | Metric | Value |
 |--------|-------|

@@ -16,12 +16,12 @@ from mlkit.use_cases import get_use_case
 
 @pytest.mark.unit
 def test_load_raw_data_returns_clean_indexed_dataframe(generated_training_csv) -> None:
-    df = load_raw_data(generated_training_csv, index_col="customerid")
+    df = load_raw_data(generated_training_csv, index_col="customer_id")
 
     # Verify ingestion returns indexed data, without empty rows and snake-case column names.
     assert isinstance(df, pd.DataFrame)
     assert len(df) > 0
-    assert df.index.name == "customerid"
+    assert df.index.name == "customer_id"
     assert not df.isna().all(axis=1).any()
     assert ~df.columns.str.contains(" ", regex=False).any()
     assert all(col == col.lower() for col in df.columns)
@@ -82,10 +82,28 @@ def test_combine_sample_predictions_adds_run_id(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_normalize_strings_strips_and_normalizes_column_names() -> None:
-    assert normalize_strings([" Customer ID ", "Subscription Type"]) == [
+    names = [
+        " Customer ID ",
+        "Subscription\t  Type",
+        "IsDomainIP",
+        "URLLength",
+        "NoOfURLRedirect",
+        "version2Value",
+        "URL",
+        "already_snake_case",
+    ]
+    expected = [
         "customer_id",
         "subscription_type",
+        "is_domain_ip",
+        "url_length",
+        "no_of_url_redirect",
+        "version2_value",
+        "url",
+        "already_snake_case",
     ]
+    assert normalize_strings(names) == expected
+    assert normalize_strings(expected) == expected
 
 
 @pytest.mark.unit
@@ -100,14 +118,14 @@ def test_ingest_jsonl_log_writes_nonempty_records(
         observed["source"] = path
         return df
 
-    def fake_write_partitioned_dataset(**kwargs: object) -> None:
+    def fake_write_parquet_dataset(**kwargs: object) -> None:
         observed["write"] = kwargs
 
     monkeypatch.setattr(ingestion, "read_jsonl_log", fake_read_jsonl_log)
     monkeypatch.setattr(
         ingestion,
-        "write_partitioned_dataset",
-        fake_write_partitioned_dataset,
+        "write_parquet_dataset",
+        fake_write_parquet_dataset,
     )
     log_path = tmp_path / "predictions.jsonl"
 
@@ -138,11 +156,11 @@ def test_ingest_jsonl_log_writes_empty_logs(
         "read_jsonl_log",
         read_jsonl_log,
     )
-    write_partitioned_dataset = Mock()
+    write_parquet_dataset = Mock()
     monkeypatch.setattr(
         ingestion,
-        "write_partitioned_dataset",
-        write_partitioned_dataset,
+        "write_parquet_dataset",
+        write_parquet_dataset,
     )
 
     ingestion.ingest_jsonl_log(
@@ -151,7 +169,7 @@ def test_ingest_jsonl_log_writes_empty_logs(
         jsonl_path=tmp_path / "empty.jsonl",
     )
 
-    write_partitioned_dataset.assert_called_once_with(
+    write_parquet_dataset.assert_called_once_with(
         df=empty_df,
         dataset_name="predictions",
         timestamp_column="reference_date",
@@ -229,14 +247,14 @@ def test_ingest_sample_data_validates_and_writes_dataset(
         observed["use_case"] = use_case
         return validated_data
 
-    def fake_write_partitioned_dataset(**kwargs: object) -> None:
+    def fake_write_parquet_dataset(**kwargs: object) -> None:
         observed["write"] = kwargs
 
     monkeypatch.setattr(ingestion, "validate_data", fake_validate_data)
     monkeypatch.setattr(
         ingestion,
-        "write_partitioned_dataset",
-        fake_write_partitioned_dataset,
+        "write_parquet_dataset",
+        fake_write_parquet_dataset,
     )
 
     use_case = get_use_case("churn")

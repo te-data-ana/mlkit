@@ -1,0 +1,106 @@
+vars:
+  - ../../phishing.yaml
+
+stages:
+  serve_samples:
+    wdir: ../../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      LOGGING_DIR=$PWD/data/${use_case}/api_logs
+      LOG_FEATURES=True
+      uv run python -m mlkit.serving.serve_samples
+      --use_case ${use_case}
+      --input_parquet splits/${split.name}_monitoring.parquet
+      --model_manifest manifests/${use_case}-${model.classifier}-${split.name}.json
+      --sample_size 1000
+      --random_state 42
+      --timestamp ${monitoring.sample_date}
+      --drop_columns label
+    deps:
+      - data/${use_case}/splits/${split.name}_monitoring.parquet
+      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
+      - src/mlkit
+      - use_cases/src/use_cases/${use_case}
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/phishing.yaml:
+          - use_case
+          - split.name
+          - model.classifier
+          - monitoring.sample_date
+    outs:
+      - data/${use_case}/api_logs:
+          persist: true
+  ingest_prediction_logs:
+    wdir: ../../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      LOGGING_DIR=$PWD/data/${use_case}/api_logs
+      uv run mlkit ingest-prediction-logs
+      --use_case ${use_case}
+      --dataset_name ${monitoring.analysis_dataset}
+    deps:
+      - data/${use_case}/api_logs
+      - src/mlkit
+      - use_cases/src/use_cases/${use_case}
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/phishing.yaml:
+          - use_case
+          - monitoring.analysis_dataset
+    outs:
+      - data/${use_case}/${monitoring.analysis_dataset}
+  ingest_error_logs:
+    wdir: ../../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      LOGGING_DIR=$PWD/data/${use_case}/api_logs
+      uv run mlkit ingest-error-logs
+      --use_case ${use_case}
+      --dataset_name ${monitoring.error_dataset}
+    deps:
+      - data/${use_case}/api_logs
+      - src/mlkit/data
+      - use_cases/src/use_cases/${use_case}
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/phishing.yaml:
+          - use_case
+          - monitoring.error_dataset
+    outs:
+      - data/${use_case}/${monitoring.error_dataset}
+  monitor:
+    wdir: ../../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      uv run mlkit monitor
+      --use_case ${use_case}
+      --reference_dataset ${monitoring.reference_dataset}/${use_case}_${model.classifier}_${split.name}
+      --analysis_dataset ${monitoring.analysis_dataset}
+      --error_dataset ${monitoring.error_dataset}
+      --source_reference ${monitoring.source_reference}
+      --source_analysis ${monitoring.source_analysis}
+      --model_manifest manifests/${use_case}-${model.classifier}-${split.name}.json
+      --output_dir data/${use_case}/monitoring/${use_case}_${model.classifier}_${split.name}
+      --mlflow_experiment_name ${use_case}-monitoring
+      --run_name ${use_case}_${model.classifier}_${split.name}
+    deps:
+      - data/${use_case}/${monitoring.reference_dataset}/${use_case}_${model.classifier}_${split.name}
+      - data/${use_case}/${monitoring.analysis_dataset}
+      - data/${use_case}/${monitoring.error_dataset}
+      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
+      - src/mlkit
+      - use_cases/src/use_cases/${use_case}
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/phishing.yaml:
+          - use_case
+          - model.classifier
+          - split.name
+          - monitoring
+    outs:
+      - data/${use_case}/monitoring/${use_case}_${model.classifier}_${split.name}
