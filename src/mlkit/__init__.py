@@ -77,6 +77,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=None,
         help="Timestamp column used for partitioning (defaults to the use-case event time column).",
     )
+    prepare_parser.add_argument(
+        "--deduplicate",
+        action="store_true",
+        help="Remove exact duplicate source rows after validation.",
+    )
 
     uci_parser = subparsers.add_parser(
         "fetch-and-prepare-uci",
@@ -103,6 +108,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     uci_parser.add_argument(
         "--use_case",
         help="Optional registered use case for validating the prepared data.",
+    )
+    uci_parser.add_argument(
+        "--deduplicate",
+        action="store_true",
+        help="Remove exact duplicate source rows after validation and target mapping.",
     )
     uci_parser.add_argument(
         "--map-target",
@@ -536,17 +546,20 @@ def main(argv: Sequence[str] | None = None) -> None:
             args.output_path,
             target_mappings=target_mappings,
             use_case=use_case,
+            deduplicate=args.deduplicate,
         )
         return
 
     if args.command == "prepare-data":
         from .data import load_raw_data, validate_data
+        from .data.deduplication import deduplicate_prepared_data
         from .data.storage import write_parquet_dataset
         from .use_cases import get_use_case
 
         use_case = get_use_case(args.use_case)
         df = load_raw_data(file_name=args.input_csv, data_dir=settings.data_dir / "raw")
-        df = validate_data(df=df, use_case=use_case)
+        validated = validate_data(df=df, use_case=use_case)
+        df = deduplicate_prepared_data(df, validated) if args.deduplicate else validated
 
         write_parquet_dataset(
             df=df,

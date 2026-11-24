@@ -1,9 +1,14 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from pydantic_core import PydanticCustomError
 
+import mlkit
 from mlkit.data import load_raw_data, validate_data
+from mlkit.data.deduplication import deduplicate_prepared_data
 from mlkit.models import IdentityFeatureBuilder
 from mlkit.use_cases import UseCase, get_use_case
 
@@ -215,3 +220,81 @@ def test_validate_data_preserves_custom_pydantic_errors() -> None:
         validate_data(df=pd.DataFrame({"value": [0]}), use_case=use_case)
     assert error.value.errors()[0]["type"] == "zero_value"
     assert error.value.errors()[0]["loc"] == (0, "value")
+
+
+@pytest.mark.unit
+def test_deduplicate_prepared_data_uses_source_rows_and_positions() -> None:
+    source = pd.DataFrame(
+        {"value": [1, 1, 1, 1, None, None], "label": [0, 0, 1, 0, 0, 0]},
+        index=[4, 4, 4, 7, 7, 9],
+    )
+    prepared = pd.DataFrame(
+        {
+            "value": [
+                "first",
+                "duplicate",
+                "other target",
+                "duplicate",
+                "missing",
+                "dup",
+            ]
+        },
+        index=source.index,
+    )
+    result = deduplicate_prepared_data(source, prepared)
+    assert result["value"].tolist() == ["first", "other target", "missing"]
+    assert result.index.tolist() == [4, 4, 7]
+    assert len(source) == len(prepared) == 6
+    with pytest.raises(ValueError, match="same row count"):
+        deduplicate_prepared_data(source, prepared.iloc[:-1])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("deduplicate", [False, True])
+def test_prepare_data_cli_deduplicates_source_rows_only_when_requested(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, deduplicate: bool
+) -> None:
+    from mlkit import data
+    from mlkit.data import storage
+
+    class Features(BaseModel):
+        value: int
+
+    use_case = UseCase(
+        name="example",
+        target_column="label",
+        time_column="timestamp",
+        feature_schema=Features,
+        feature_builder_factory=IdentityFeatureBuilder,
+    )
+    source = pd.DataFrame(
+        {
+            "value": ["1", "1", "1", "1", "01"],
+            "label": [0, 0, 0, 1, 0],
+            "ignored": ["a", "a", "b", "a", "a"],
+        },
+        index=[2, 2, 3, 4, 5],
+    )
+    written: list[pd.DataFrame] = []
+    monkeypatch.setattr(
+        mlkit, "RuntimeSettings", lambda: SimpleNamespace(data_dir=tmp_path)
+    )
+    monkeypatch.setattr(data, "load_raw_data", lambda **kwargs: source)
+    monkeypatch.setattr(
+        storage, "write_parquet_dataset", lambda **kwargs: written.append(kwargs["df"])
+    )
+    monkeypatch.setattr("mlkit.use_cases.get_use_case", lambda name: use_case)
+
+    args = ["prepare-data", "--input_csv", "input.csv", "--use_case", "example"]
+    if deduplicate:
+        args.append("--deduplicate")
+    mlkit.main(args)
+
+    assert len(written) == 1
+    result = written[0]
+    assert result["label"].tolist() == (
+        [0, 0, 1, 0] if deduplicate else [0, 0, 0, 1, 0]
+    )
+    assert result.index.tolist() == ([2, 3, 4, 5] if deduplicate else [2, 2, 3, 4, 5])
+    assert result["value"].tolist() == [1] * len(result)
+    assert "ignored" not in result.columns

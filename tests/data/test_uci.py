@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError, field_validator
 
 import mlkit
 from mlkit.data import uci
@@ -122,6 +122,104 @@ def test_prepare_uci_maps_labels_and_validates_use_case(tmp_path: Path) -> None:
         prepare_uci_snapshot(
             snapshot_dir=tmp_path, output_path=output, use_case=use_case
         )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("with_use_case", [False, True])
+@pytest.mark.parametrize("deduplicate", [False, True])
+def test_prepare_uci_deduplicates_source_before_mapping_and_filtering(
+    tmp_path: Path, with_use_case: bool, deduplicate: bool
+) -> None:
+    class Features(BaseModel):
+        value: int
+
+    use_case = UseCase(
+        name="example",
+        target_column="label",
+        time_column=None,
+        split_strategy="stratified_random",
+        feature_schema=Features,
+        feature_builder_factory=IdentityFeatureBuilder,
+    )
+    features = pd.DataFrame({"Value": [1] * 5, "Ignored": ["a", "a", "b", "a", "a"]})
+    targets = pd.DataFrame({"Label": ["a", "a", "a", "b", "c"]})
+    _write_snapshot(tmp_path, features, targets)
+    output = tmp_path / "prepared.parquet"
+    prepare_uci_snapshot(
+        tmp_path,
+        output,
+        target_mappings={"label": {"a": 0, "b": 0, "c": 1}},
+        use_case=use_case if with_use_case else None,
+        deduplicate=deduplicate,
+    )
+    result = pd.read_parquet(output)
+    assert result["label"].tolist() == (
+        [0, 0, 0, 1] if deduplicate else [0, 0, 0, 0, 1]
+    )
+    assert ("ignored" in result.columns) is not with_use_case
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(tmp_path / "features.parquet"), features
+    )
+    pd.testing.assert_frame_equal(
+        pd.read_parquet(tmp_path / "targets.parquet"), targets
+    )
+
+
+@pytest.mark.unit
+def test_prepare_uci_validates_all_rows_before_deduplicating(tmp_path: Path) -> None:
+    calls = 0
+
+    class Features(BaseModel):
+        value: int
+
+        @field_validator("value")
+        @classmethod
+        def reject_second_row(cls, value: int) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise ValueError("second row rejected")
+            return value
+
+    use_case = UseCase(
+        name="example",
+        target_column="label",
+        time_column=None,
+        split_strategy="stratified_random",
+        feature_schema=Features,
+        feature_builder_factory=IdentityFeatureBuilder,
+    )
+    _write_snapshot(
+        tmp_path, pd.DataFrame({"Value": [1, 1]}), pd.DataFrame({"Label": [0, 0]})
+    )
+    with pytest.raises(ValidationError, match="second row rejected"):
+        prepare_uci_snapshot(
+            tmp_path, tmp_path / "prepared.parquet", use_case=use_case, deduplicate=True
+        )
+    assert not (tmp_path / "prepared.parquet").exists()
+
+
+@pytest.mark.unit
+def test_prepare_uci_deduplicates_across_validation_chunks(tmp_path: Path) -> None:
+    class Features(BaseModel):
+        value: int
+
+    use_case = UseCase(
+        name="example",
+        target_column="label",
+        time_column=None,
+        split_strategy="stratified_random",
+        feature_schema=Features,
+        feature_builder_factory=IdentityFeatureBuilder,
+    )
+    _write_snapshot(
+        tmp_path,
+        pd.DataFrame({"Value": [*range(10_000), 0]}),
+        pd.DataFrame({"Label": [0] * 10_001}),
+    )
+    output = tmp_path / "prepared.parquet"
+    prepare_uci_snapshot(tmp_path, output, use_case=use_case, deduplicate=True)
+    assert pd.read_parquet(output)["value"].tolist() == list(range(10_000))
 
 
 @pytest.mark.unit
@@ -279,6 +377,7 @@ def test_uci_cli_resolves_use_case_before_fetch_and_preparation(
             "label",
             "0",
             "1",
+            "--deduplicate",
         ]
     )
     assert calls == [
@@ -288,7 +387,11 @@ def test_uci_cli_resolves_use_case_before_fetch_and_preparation(
             "prepare",
             tmp_path,
             output,
-            {"target_mappings": {"label": {0: 1}}, "use_case": use_case},
+            {
+                "target_mappings": {"label": {0: 1}},
+                "use_case": use_case,
+                "deduplicate": True,
+            },
         ),
     ]
 

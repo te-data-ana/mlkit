@@ -9,6 +9,7 @@ from typing import TypeGuard
 
 import pandas as pd
 
+from mlkit.data.deduplication import deduplicate_prepared_data
 from mlkit.data.ingestion import normalize_strings
 from mlkit.use_cases import UseCase
 
@@ -61,6 +62,7 @@ def prepare_uci_snapshot(
     *,
     target_mappings: Mapping[str, Mapping[Scalar, Scalar]] | None = None,
     use_case: UseCase | None = None,
+    deduplicate: bool = False,
 ) -> None:
     """Store UCI snapshot data in a combined Parquet file,
     optionally mapping targets and validating it.
@@ -70,6 +72,7 @@ def prepare_uci_snapshot(
         output_path: Destination Parquet file.
         target_mappings: Explicit value mappings keyed by normalized target name.
         use_case: Optional single-binary-target contract for validation.
+        deduplicate: Remove exact duplicate source rows after validation.
 
     Raises:
         ValueError: If the snapshot, mappings, or use-case targets are invalid.
@@ -87,6 +90,13 @@ def prepare_uci_snapshot(
     if set(features.columns).intersection(targets.columns):
         raise ValueError("UCI feature and target names must not overlap.")
 
+    source = (
+        pd.concat(
+            [features.reset_index(drop=True), targets.reset_index(drop=True)], axis=1
+        )
+        if deduplicate
+        else None
+    )
     if use_case is not None and list(targets.columns) != [use_case.target_column]:
         raise ValueError(
             f"Use case '{use_case.name}' requires one target column named "
@@ -113,6 +123,8 @@ def prepare_uci_snapshot(
     )
     if use_case is not None:
         frame = use_case.validate(df=frame)
+    if source is not None:
+        frame = deduplicate_prepared_data(source, frame)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(path=output_path, index=False)
     logger.info("Prepared UCI snapshot at '%s' with %s rows.", output_path, len(frame))

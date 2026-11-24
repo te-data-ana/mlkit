@@ -72,6 +72,12 @@ uv run mlkit prepare-data --input_csv training.csv --use_case churn
 uv run mlkit prepare-data --input_csv inference.csv --use_case churn
 ```
 
+Optionally add `--deduplicate` to remove exact duplicate loaded source rows
+after validation. All source columns, including targets and columns later
+filtered out, participate in the comparison; the first occurrence is kept.
+Duplicates are retained by default because identical rows can represent
+distinct observations.
+
 Create train and test files from an inclusive date range. Rows before
 `split_date` go to training; rows on or after it go to test. The selected use
 case supplies the timestamp column.
@@ -239,6 +245,12 @@ For string labels, quote JSON strings in the shell, for example
 `--map-target species '"setosa"' 0`. The combined command fetches a fresh
 snapshot each time it runs. The separate DVC `create_split` stage reuses the
 prepared Parquet output when only split parameters change.
+
+The optional `--deduplicate` flag removes duplicate source feature-and-target
+rows from the prepared output, but not from the saved snapshot. Comparison
+occurs before target mapping and use-case filtering; rows that become identical
+only after these transformations are retained. The DataFrame index is ignored,
+and the first occurrence is kept.
 
 ```bash
 uv run dvc repro pipeline/phishing/dvc.yaml
