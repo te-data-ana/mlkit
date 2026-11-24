@@ -2393,10 +2393,12 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 datasets = [
     { name = "ucimlrepo" },
 ]
+
+[package.dev-dependencies]
 dev = [
     { name = "detect-secrets" },
     { name = "dvc" },
@@ -2429,11 +2431,12 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.9.0" },
     { name = "sqlalchemy", specifier = ">=2.0,<2.1" },
     { name = "statsmodels", specifier = ">=0.15.0" },
+    { name = "ucimlrepo", marker = "extra == 'datasets'", specifier = ">=0.0.7" },
     { name = "uvicorn", specifier = ">=0.53.0" },
 ]
+provides-extras = ["datasets"]
 
 [package.metadata.requires-dev]
-datasets = [{ name = "ucimlrepo", specifier = ">=0.0.7" }]
 dev = [
     { name = "detect-secrets", specifier = ">=1.5.0" },
     { name = "dvc", specifier = ">=3.67.1" },

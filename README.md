@@ -208,7 +208,7 @@ requires sharing both DVC data and MLflow tracking/artifacts.
 ### PhiUSIIL phishing workflow
 
 The [phishing pipeline](pipeline/phishing/dvc.yaml) downloads UCI dataset 967
-using `ucimlrepo` (the existing `datasets` dependency group), snapshots its
+using `ucimlrepo` (the `datasets` optional dependency extra), snapshots its
 feature and target DataFrames and metadata, and creates a seeded, stratified
 80% training / 10% test / 10% monitoring split. Model inputs are the dataset's
 50 precomputed numeric URL and webpage features; raw URL, domain, TLD and
@@ -226,7 +226,7 @@ every value mapping. The phishing pipeline explicitly uses
 `--map-target label 0 1 --map-target label 1 0`.
 
 ```bash
-uv run --group datasets mlkit fetch-and-prepare-uci \
+uv run --extra datasets mlkit fetch-and-prepare-uci \
   --dataset-id 967 \
   --snapshot-dir data/phishing/raw/uci \
   --output-path data/phishing/prepared.parquet \

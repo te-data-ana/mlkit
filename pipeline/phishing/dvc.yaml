@@ -5,7 +5,7 @@ stages:
   fetch_and_prepare_uci:
     wdir: ../..
     cmd: >-
-      uv run --group datasets mlkit fetch-and-prepare-uci
+      uv run --extra datasets mlkit fetch-and-prepare-uci
       --dataset-id ${dataset_id}
       --snapshot-dir data/${use_case}/raw/uci
       --output-path data/${use_case}/prepared.parquet
