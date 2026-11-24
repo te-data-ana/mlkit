@@ -33,6 +33,7 @@ stages:
       --input_parquet prepared.parquet
       --split_name ${split.name}
       --random_state ${split.random_state}
+      --validation_fraction ${split.validation_fraction}
       --test_fraction ${split.test_fraction}
       --monitoring_fraction ${split.monitoring_fraction}
     deps:

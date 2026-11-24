@@ -41,7 +41,7 @@ def test_training_manifest_round_trips_json(
         "threshold",
     ]
     assert list(payload["lifecycle"]) == ["registration", "promotion"]
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["model"]["use_case"] == "churn"
     assert "use_case" not in payload["data"]
     assert payload["data"]["time_column"] == "reference_date"

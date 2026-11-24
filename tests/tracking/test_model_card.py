@@ -42,7 +42,7 @@ def test_build_model_card_from_training_manifest(
     assert "| Fitting Cohort Records | 80 |" in markdown
     assert "| Threshold Cohort Records | 20 |" in markdown
     assert "| Time Column | reference_date |" in markdown
-    assert "maximizing F1 on a training validation holdout" in markdown
+    assert "maximizing F1 on the independent validation cohort" in markdown
     assert f"{context.training.threshold:.6f}" in markdown
     assert re.search(r"\| ROC AUC \| \d\.\d{4} \|", markdown)
     assert re.search(r"\| Calibration Error \(ECE\) \| \d\.\d{4} \|", markdown)
@@ -146,11 +146,9 @@ def test_random_split_card_has_no_temporal_claims(
     )
     card = ModelCardBuilder().build(config=config_factory(), context=manifest)
     assert "Stratified random" in card
-    assert "training validation holdout" in card
-    assert "Out-of-Time" not in card
-    assert "Training Start" not in card
-    assert "| Test Fraction | 0.1 |" in card
-    assert "| Monitoring Fraction | 0.1 |" in card
+    assert "independent validation cohort" in card
+    assert "| Requested Test Fraction | 0.1 |" in card
+    assert "| Requested Monitoring Fraction | 0.1 |" in card
 
     empty_metadata = dict(
         manifest.data.split_metadata,

@@ -563,8 +563,6 @@ def test_package_main_dispatches_create_split(
             "alternate",
             "--start_date",
             "2026-01-01",
-            "--split_date",
-            "2026-04-01",
             "--end_date",
             "2026-06-30",
             "--split_name",
@@ -577,12 +575,12 @@ def test_package_main_dispatches_create_split(
         "dataset_name": "partitioned",
         "input_parquet": None,
         "start_date": "2026-01-01",
-        "split_date": "2026-04-01",
         "end_date": "2026-06-30",
         "split_name": "pytest",
-        "random_state": None,
-        "test_fraction": None,
-        "monitoring_fraction": None,
+        "random_state": 42,
+        "validation_fraction": 0.1,
+        "test_fraction": 0.1,
+        "monitoring_fraction": 0.1,
         "settings": settings,
     }
 
@@ -596,23 +594,7 @@ def test_package_main_dispatches_create_split(
         (
             "phishing",
             ["--input_parquet", "data.parquet", "--start_date", "2024-01-01"],
-            "only for temporal splitting",
-        ),
-        (
-            "churn",
-            [
-                "--dataset_name",
-                "data",
-                "--start_date",
-                "2024-01-01",
-                "--split_date",
-                "2024-02-01",
-                "--end_date",
-                "2024-03-01",
-                "--random_state",
-                "42",
-            ],
-            "only for random splitting",
+            "Random splitting requires",
         ),
     ],
 )
@@ -659,10 +641,11 @@ def test_create_split_cli_applies_random_fractions(
     )
     metadata = json.loads((tmp_path / "splits/s.json").read_text())
     assert (
-        metadata["train_rows"],
+        metadata["fit_rows"],
+        metadata["validation_rows"],
         metadata["test_rows"],
         metadata["monitoring_rows"],
-    ) == (80, 20, 0)
+    ) == (70, 10, 20, 0)
     assert pd.read_parquet(tmp_path / "splits/s_monitoring.parquet").empty
 
 

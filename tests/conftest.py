@@ -68,12 +68,11 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 split_name="oot_26q1",
                 split_metadata={
                     "split_strategy": "temporal",
-                    "split_train_rows": 100,
-                    "split_test_rows": 25,
                     "split_fit_rows": 80,
                     "split_validation_rows": 20,
-                    "split_train_start": "2025-01-01T00:00:00",
-                    "split_train_end": "2025-12-31T00:00:00",
+                    "split_test_rows": 25,
+                    "split_fit_start": "2025-01-01T00:00:00",
+                    "split_fit_end": "2025-12-31T00:00:00",
                     "split_test_start": "2026-01-01T00:00:00",
                     "split_test_end": "2026-03-31T00:00:00",
                 },
@@ -345,7 +344,6 @@ def sample_config_yaml(mlflow_test_setup: dict[str, Any]) -> Path:
                 },
                 "threshold": {
                     "strategy": "max_f1",
-                    "validation_fraction": 0.4,
                 },
                 "promotion": {
                     "min_delta": 0.005,
@@ -391,7 +389,8 @@ def registered_model(
 
     split_name = "integration"
 
-    df = generated_training_df.copy().reset_index(drop=True)
+    df = pd.concat([generated_training_df] * 10, ignore_index=True)
+    df.columns = splitting.normalize_strings(df.columns)
     df["reference_date"] = pd.date_range("2026-01-01", periods=len(df))
 
     storage.write_parquet_dataset(
@@ -400,12 +399,9 @@ def registered_model(
         timestamp_column="reference_date",
     )
 
-    _ = splitting.create_time_based_split(
+    _ = splitting.create_data_splits(
         use_case=CHURN_USE_CASE,
         df=df,
-        start_date="2026-01-01",
-        split_date="2026-01-06",
-        end_date="2026-01-10",
         split_name=split_name,
     )
 

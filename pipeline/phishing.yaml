@@ -4,6 +4,7 @@ dataset_id: 967
 split:
   name: oos-42
   random_state: 42
+  validation_fraction: 0.1
   test_fraction: 0.1
   monitoring_fraction: 0.1
 

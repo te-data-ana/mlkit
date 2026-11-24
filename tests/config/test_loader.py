@@ -51,7 +51,6 @@ def test_shipped_training_configs_have_valid_settings(
     assert "use_case" not in raw_config
     assert "registry" not in raw_config
     assert raw_config["random_state"] == config.random_state
-    assert raw_config["threshold"]["validation_fraction"] == 0.2
     assert "selection_data" not in raw_config["threshold"]
     assert "random_state" not in raw_config["threshold"]
     assert "random_state" not in raw_config.get("tuning", {})

@@ -21,7 +21,6 @@ calibration:
 
 threshold:
   strategy: max_f1
-  validation_fraction: 0.2
 
 promotion:
   min_delta: 0.005

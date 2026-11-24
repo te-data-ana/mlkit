@@ -12,18 +12,33 @@ import pytest
 import mlkit
 from mlkit import train
 from mlkit.config.schemas import ThresholdConfig, TrainingConfig, TuningConfig
+from mlkit.data.splitting import create_data_splits, load_split_metadata
 from mlkit.training import TuningResult
 from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
 TEMPORAL_METADATA = {
     "strategy": "temporal",
-    "train_rows": 10,
-    "test_rows": 2,
-    "train_start": "2026-01-01T00:00:00",
-    "train_end": "2026-01-10T00:00:00",
+    "fit_rows": 70,
+    "validation_rows": 10,
+    "test_rows": 10,
+    "monitoring_rows": 10,
+    "fit_fraction": 0.7,
+    "validation_fraction": 0.1,
+    "test_fraction": 0.1,
+    "monitoring_fraction": 0.1,
+    "fit_actual_fraction": 0.7,
+    "validation_actual_fraction": 0.1,
+    "test_actual_fraction": 0.1,
+    "monitoring_actual_fraction": 0.1,
+    "fit_start": "2026-01-01T00:00:00",
+    "fit_end": "2026-01-10T00:00:00",
+    "validation_start": "2026-01-11T00:00:00",
+    "validation_end": "2026-01-31T00:00:00",
     "test_start": "2026-02-01T00:00:00",
     "test_end": "2026-02-02T00:00:00",
+    "monitoring_start": "2026-02-03T00:00:00",
+    "monitoring_end": "2026-02-04T00:00:00",
 }
 
 
@@ -180,8 +195,8 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
     use_case = CHURN_USE_CASE.name
     config_file = "train.yaml"
     split_name = "temporal"
-    load_splits = MagicMock(return_value=(MagicMock(), MagicMock()))
     fit_df, validation_df = MagicMock(), MagicMock()
+    load_splits = MagicMock(return_value=(fit_df, validation_df, MagicMock()))
     training_result = MagicMock()
     training_result.metrics = {
         "roc_auc": 0.8,
@@ -200,9 +215,6 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
     monkeypatch.setattr(train, "configure_logging", lambda: None)
     monkeypatch.setattr(train, "load_config", lambda **_: (config, Path(config_file)))
     monkeypatch.setattr(train, "load_and_validate_training_splits", load_splits)
-    monkeypatch.setattr(
-        train, "split_threshold_validation", lambda *_: (fit_df, validation_df)
-    )
     monkeypatch.setattr(train, "train_model", train_model_mock)
     monkeypatch.setattr(train, "setup_local_experiment", setup_experiment)
     monkeypatch.setattr(train, "log_experiment_result", MagicMock())
@@ -237,12 +249,13 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
         split_name=split_name,
         split_dir=tmp_path / "splits",
         use_case=CHURN_USE_CASE,
+        metadata=load_split_metadata(tmp_path / "splits/temporal.json"),
     )
     train_model_mock.assert_called_once_with(
         config=config,
         fit_df=fit_df,
         validation_df=validation_df,
-        test_df=load_splits.return_value[1],
+        test_df=load_splits.return_value[2],
         use_case=CHURN_USE_CASE,
         calibration_method="none",
         n_jobs=1,
@@ -250,9 +263,9 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
     )
     log_messages = [
         "Loaded training configuration",
+        "Loaded validated split",
         "MLflow experiment",
         "MLflow artifact location",
-        "Loaded validated split",
         "Starting MLflow run",
         "Started MLflow run",
         "Hyperparameter tuning is disabled",
@@ -311,10 +324,7 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
     monkeypatch.setattr(
         train,
         "load_and_validate_training_splits",
-        MagicMock(return_value=(pd.DataFrame(), pd.DataFrame())),
-    )
-    monkeypatch.setattr(
-        train, "split_threshold_validation", lambda *_: (pd.DataFrame(), pd.DataFrame())
+        MagicMock(return_value=(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())),
     )
     monkeypatch.setattr(train, "train_model", train_model_mock)
     monkeypatch.setattr(train, "setup_local_experiment", MagicMock(return_value="exp"))
@@ -368,9 +378,7 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
     assert manifest.model.use_case == use_case
     assert manifest.data.time_column == "reference_date"
     expected_split_metadata = {
-        **{f"split_{key}": value for key, value in TEMPORAL_METADATA.items()},
-        "split_fit_rows": 0,
-        "split_validation_rows": 0,
+        f"split_{key}": value for key, value in TEMPORAL_METADATA.items()
     }
     assert manifest.data.split_metadata == expected_split_metadata
     train.mlflow.log_params.assert_any_call(expected_split_metadata)
@@ -395,7 +403,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
         random_state=19,
         model=SimpleNamespace(classifier="rf"),
         calibration=SimpleNamespace(n_splits=3, n_bins=10),
-        threshold=SimpleNamespace(strategy="max_f1", validation_fraction=0.2),
+        threshold=SimpleNamespace(strategy="max_f1"),
         promotion=SimpleNamespace(
             metric_weights={
                 "roc_auc": 0.2,
@@ -428,7 +436,8 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
         }
     )
     test_df = pd.DataFrame({"churn": [0, 1], "feature": [10, 11]})
-    load_splits = MagicMock(return_value=(train_df, test_df))
+    fit_df, validation_df = train_df.iloc[:8], train_df.iloc[8:]
+    load_splits = MagicMock(return_value=(fit_df, validation_df, test_df))
     optimizer = MagicMock(
         return_value=TuningResult(
             best_params={"n_estimators": 150, "max_depth": None},
@@ -487,6 +496,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
         split_name=split_name,
         split_dir=tmp_path / "splits",
         use_case=CHURN_USE_CASE,
+        metadata=load_split_metadata(tmp_path / "splits/temporal.json"),
     )
     assert optimizer.call_count == 1
     assert optimizer.call_args.kwargs["config"] is config
@@ -532,20 +542,17 @@ def test_tuning_excludes_threshold_validation(
         tuning=TuningConfig(n_trials=2, n_splits=2),
     )
     train_df = pd.DataFrame({"churn": [0, 1] * 25})
-    test_df = pd.DataFrame({"churn": [0, 1]})
-    (tmp_path / "splits").mkdir()
-    (tmp_path / "splits" / "s.json").write_text(
-        json.dumps(
-            {
-                "strategy": "stratified_random",
-                "random_state": 7,
-                "train_rows": 50,
-                "test_rows": 2,
-                "monitoring_rows": 2,
-                "test_fraction": 0.1,
-                "monitoring_fraction": 0.1,
-            }
-        )
+    fit_df, validation_df = train_df.iloc[:40], train_df.iloc[40:]
+    test_df = pd.DataFrame({"churn": [0, 1]}, index=[50, 51])
+    random_use_case = replace(
+        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+    )
+    create_data_splits(
+        use_case=random_use_case,
+        df=pd.DataFrame({"churn": [0, 1] * 50}),
+        split_name="s",
+        random_state=7,
+        settings=SimpleNamespace(data_dir=tmp_path),
     )
     settings = SimpleNamespace(
         config_dir=tmp_path,
@@ -575,12 +582,12 @@ def test_tuning_excludes_threshold_validation(
     monkeypatch.setattr(
         train,
         "get_use_case",
-        lambda _: replace(
-            CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
-        ),
+        lambda _: random_use_case,
     )
     monkeypatch.setattr(
-        train, "load_and_validate_training_splits", lambda **_: (train_df, test_df)
+        train,
+        "load_and_validate_training_splits",
+        lambda **_: (fit_df, validation_df, test_df),
     )
     monkeypatch.setattr(train, "optimize_hyperparameters", optimizer)
     monkeypatch.setattr(train, "train_model", MagicMock(return_value=model))
@@ -604,23 +611,17 @@ def test_tuning_excludes_threshold_validation(
         write_manifest=False,
         settings=settings,
     )
-    fit, validation = train.split_threshold_validation(train_df, "churn", config)
     tuned = optimizer.call_args.kwargs["train_df"]
-    assert set(tuned.index) == set(fit.index)
+    assert set(tuned.index) == set(fit_df.index)
     assert train.train_model.call_args.kwargs["fit_df"].equals(tuned)
-    assert train.train_model.call_args.kwargs["validation_df"].equals(validation)
-    assert set(tuned.index).isdisjoint(validation.index)
+    assert train.train_model.call_args.kwargs["validation_df"].equals(validation_df)
+    assert set(tuned.index).isdisjoint(validation_df.index)
     split_params = train.mlflow.log_params.call_args_list[0].args[0]
     assert split_params == {
-        "split_strategy": "stratified_random",
-        "split_train_rows": 50,
-        "split_test_rows": 2,
-        "split_monitoring_rows": 2,
-        "split_random_state": 7,
-        "split_test_fraction": 0.1,
-        "split_monitoring_fraction": 0.1,
-        "split_fit_rows": len(fit),
-        "split_validation_rows": len(validation),
+        f"split_{key}": value
+        for key, value in load_split_metadata(tmp_path / "splits/s.json")
+        .model_dump(exclude_none=True)
+        .items()
     }
 
 
@@ -651,18 +652,13 @@ def test_training_rejects_split_strategy_mismatch(
     config_factory: Callable[..., TrainingConfig],
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "s.json").write_text(
-        json.dumps(
-            {
-                "strategy": "stratified_random",
-                "train_rows": 80,
-                "test_rows": 10,
-                "monitoring_rows": 10,
-                "test_fraction": 0.1,
-                "monitoring_fraction": 0.1,
-                "random_state": 42,
-            }
-        )
+    create_data_splits(
+        use_case=replace(
+            CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+        ),
+        df=pd.DataFrame({"churn": [0, 1] * 50}),
+        split_name="s",
+        settings=SimpleNamespace(data_dir=tmp_path),
     )
     config = config_factory()
     monkeypatch.setattr(train, "load_config", lambda **_: (config, tmp_path / "c.yaml"))
@@ -672,7 +668,7 @@ def test_training_rejects_split_strategy_mismatch(
             config_file="c.yaml",
             split_name="s",
             config_dir=tmp_path,
-            split_dir=tmp_path,
+            split_dir=tmp_path / "splits",
         )
 
 
@@ -749,10 +745,7 @@ def test_registration_uses_derived_name_and_only_promotion_aliases(
     monkeypatch.setattr(
         train,
         "load_and_validate_training_splits",
-        MagicMock(return_value=(pd.DataFrame(), pd.DataFrame())),
-    )
-    monkeypatch.setattr(
-        train, "split_threshold_validation", lambda *_: (pd.DataFrame(), pd.DataFrame())
+        MagicMock(return_value=(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())),
     )
     monkeypatch.setattr(train, "train_model", MagicMock(return_value=training_result))
     monkeypatch.setattr(train, "setup_local_experiment", MagicMock(return_value="exp"))

@@ -36,7 +36,6 @@ from mlkit.training import (
     optimize_hyperparameters,
     train_model,
 )
-from mlkit.training.model_training import split_threshold_validation
 from mlkit.use_cases import get_use_case
 
 
@@ -62,7 +61,7 @@ def run_training_job(
     Args:
         use_case: Required name of the registered use-case contract.
         config_file: Training configuration YAML filename.
-        split_name: Prefix of the prepared train/test Parquet split files.
+        split_name: Prefix of the prepared cohort Parquet files.
         config_dir: Directory containing the training configuration.
         split_dir: Directory containing the prepared split files.
         tracking_uri: Optional MLflow tracking URI.
@@ -164,6 +163,24 @@ def run_training_job(
             "enabled" if register_model and promote_model else "disabled",
         )
 
+        fit_df, validation_df, test_df = load_and_validate_training_splits(
+            use_case=selected_use_case,
+            split_name=split_name,
+            split_dir=resolved_split_dir,
+            metadata=metadata,
+        )
+        logger.info(
+            "Loaded validated split '%s': %d fit, %d validation and %d test rows.",
+            split_name,
+            len(fit_df),
+            len(validation_df),
+            len(test_df),
+        )
+        split_metadata = {
+            f"split_{key}": value
+            for key, value in metadata.model_dump(exclude_none=True).items()
+        }
+
         experiment_id = setup_local_experiment(
             experiment_name=experiment_name,
             tracking_uri=resolved_tracking_uri,
@@ -177,31 +194,6 @@ def run_training_job(
         )
         logger.info("Tracking URI: %s", mlflow.get_tracking_uri())
         logger.info("MLflow artifact location: %s", experiment.artifact_location)
-
-        train_df, test_df = load_and_validate_training_splits(
-            use_case=selected_use_case,
-            split_name=split_name,
-            split_dir=resolved_split_dir,
-        )
-        logger.info(
-            "Loaded validated split '%s': %d train rows and %d test rows.",
-            split_name,
-            len(train_df),
-            len(test_df),
-        )
-        fit_df, validation_df = split_threshold_validation(
-            train_df, selected_use_case.target_column, config
-        )
-        split_metadata = {
-            **{f"split_{key}": value for key, value in metadata.model_dump().items()},
-            "split_fit_rows": len(fit_df),
-            "split_validation_rows": len(validation_df),
-        }
-        logger.info(
-            "Reserved %d training rows for threshold validation; fitting on %d rows.",
-            len(validation_df),
-            len(fit_df),
-        )
 
         # Start an MLflow run for the training job and log the results
         logger.info(

@@ -149,7 +149,7 @@ class TrainingManifest:
     training: ManifestTraining
     evaluation: ManifestEvaluation
     lifecycle: ManifestLifecycle
-    schema_version: int = 3
+    schema_version: int = 4
 
     def write(self, path: Path) -> None:
         """Write the manifest as formatted JSON.
@@ -266,7 +266,7 @@ class TrainingManifest:
             raise TypeError(
                 f"Training manifest '{path}' has an invalid schema_version."
             )
-        if payload["schema_version"] != 3:
+        if payload["schema_version"] != 4:
             raise ValueError(
                 f"Training manifest '{path}' uses unsupported schema_version "
                 f"{payload['schema_version']}."

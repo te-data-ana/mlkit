@@ -146,24 +146,26 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Random split seed (default: 42).",
     )
     split_parser.add_argument(
+        "--validation_fraction",
+        type=float,
+        default=0.1,
+        help="Fraction of records for threshold validation (default: 0.1).",
+    )
+    split_parser.add_argument(
         "--test_fraction",
         type=float,
-        default=None,
-        help="Fraction of records for random test splitting (default: 0.1).",
+        default=0.1,
+        help="Fraction of records for testing (default: 0.1).",
     )
     split_parser.add_argument(
         "--monitoring_fraction",
         type=float,
-        default=None,
-        help="Fraction of records for random monitoring (default: 0.1; zero disables it).",
+        default=0.1,
+        help="Fraction of records for monitoring (default: 0.1; zero disables it).",
     )
     split_parser.add_argument(
         "--start_date",
         help="Inclusive extraction start date.",
-    )
-    split_parser.add_argument(
-        "--split_date",
-        help="First date belonging to the test split.",
     )
     split_parser.add_argument(
         "--end_date",
@@ -583,11 +585,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 input_parquet=args.input_parquet,
                 split_name=args.split_name,
                 start_date=args.start_date,
-                split_date=args.split_date,
                 end_date=args.end_date,
+                validation_fraction=args.validation_fraction,
                 test_fraction=args.test_fraction,
                 monitoring_fraction=args.monitoring_fraction,
-                random_state=args.random_state,
+                random_state=args.random_state if args.random_state is not None else 42,
                 settings=settings,
             )
         except ValueError as exc:

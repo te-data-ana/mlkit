@@ -41,20 +41,36 @@ class ModelCardBuilder:
         split_metadata = context.data.split_metadata
         strategy = split_metadata["split_strategy"]
         random_split = strategy == "stratified_random"
-        detail_rows = [
-            f"| Split Strategy | {str(strategy).replace('_', ' ').capitalize()} |"
-        ]
+        detail_rows = [f"| Target Column | {context.data.target_column} |"]
         if not random_split and context.data.time_column is not None:
             detail_rows.append(f"| Time Column | {context.data.time_column} |")
+
+        detail_rows.append(f"| Feature Count | {context.training.feature_count} |")
+        detail_rows.append(
+            f"| Split Strategy | {str(strategy).replace('_', ' ').capitalize()} |"
+        )
         for key, label in (
-            ("split_train_start", "Training Start"),
-            ("split_train_end", "Training End"),
+            ("split_fit_fraction", "Requested Fit Fraction"),
+            ("split_validation_fraction", "Requested Validation Fraction"),
+            ("split_test_fraction", "Requested Test Fraction"),
+            ("split_monitoring_fraction", "Requested Monitoring Fraction"),
+            ("split_fit_actual_fraction", "Actual Fit Fraction"),
+            ("split_validation_actual_fraction", "Actual Validation Fraction"),
+            ("split_test_actual_fraction", "Actual Test Fraction"),
+            ("split_monitoring_actual_fraction", "Actual Monitoring Fraction"),
+            ("split_fit_rows", "Fitting Cohort Records"),
+            ("split_validation_rows", "Threshold Cohort Records"),
+            ("split_test_rows", "Test Cohort Records"),
+            ("split_monitoring_rows", "Monitoring Cohort Records"),
+            ("split_random_state", "Split Seed"),
+            ("split_fit_start", "Fitting Start"),
+            ("split_fit_end", "Fitting End"),
+            ("split_validation_start", "Validation Start"),
+            ("split_validation_end", "Validation End"),
             ("split_test_start", "Test Start"),
             ("split_test_end", "Test End"),
-            ("split_random_state", "Split Seed"),
-            ("split_test_fraction", "Test Fraction"),
-            ("split_monitoring_fraction", "Monitoring Fraction"),
-            ("split_monitoring_rows", "Monitoring Cohort Records"),
+            ("split_monitoring_start", "Monitoring Start"),
+            ("split_monitoring_end", "Monitoring End"),
         ):
             if key in split_metadata:
                 detail_rows.append(f"| {label} | {split_metadata[key]} |")
@@ -63,9 +79,9 @@ class ModelCardBuilder:
             "random stratified test set" if random_split else "out-of-time test set"
         )
         threshold_note = (
-            "The decision threshold was selected by maximizing F1 on a training "
-            f"validation holdout (fraction {config.threshold.validation_fraction}). "
-            "The estimator was fitted only on the remaining training rows."
+            "The decision threshold was selected by maximizing F1 on the "
+            "independent validation cohort. The estimator was fitted only on "
+            "the fitting cohort."
         )
 
         features = "\n".join(
@@ -127,13 +143,7 @@ Trained on {context.model.use_case} data.
 
 | Property | Value |
 |----------|-------|
-| Target Column | {context.data.target_column} |
-| Training Cohort Records | {split_metadata["split_train_rows"]} |
-| Fitting Cohort Records | {split_metadata["split_fit_rows"]} |
-| Threshold Cohort Records | {split_metadata["split_validation_rows"]} |
-| Test Cohort Records | {split_metadata["split_test_rows"]} |
 {split_rows}
-| Feature Count | {context.training.feature_count} |
 
 ## Model Features
 

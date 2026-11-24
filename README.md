@@ -30,9 +30,8 @@ Run the test suite:
 uv run pytest
 ```
 
-Training requires prepared training and test parquet files
-`data/<use_case>/splits/<split_name>_train.parquet` and
-`data/<use_case>/splits/<split_name>_test.parquet`.
+Training requires prepared fit, validation and test Parquet files and their
+metadata under `data/<use_case>/splits`.
 Follow the data preparation and training workflows below to create them. The
 repository does not include the raw CSV contents; see
 [DVC experiments](#reproduce-an-out-of-time-experiment)
@@ -78,36 +77,36 @@ filtered out, participate in the comparison; the first occurrence is kept.
 Duplicates are retained by default because identical rows can represent
 distinct observations.
 
-Create train and test files from an inclusive date range. Rows before
-`split_date` go to training; rows on or after it go to test. The selected use
-case supplies the timestamp column.
+Create chronological cohorts from an optional inclusive extraction window:
 
 ```bash
 uv run mlkit create-split \
   --dataset_name partitioned \
   --use_case churn \
   --start_date 2025-04-01 \
-  --split_date 2026-04-01 \
   --end_date 2026-06-30 \
-  --split_name oot-26Q2
+  --validation_fraction 0.1 \
+  --test_fraction 0.1 \
+  --monitoring_fraction 0.1 \
+  --split_name temporal-70-10-10-10
 ```
 
-This creates `oot-26Q2_train.parquet`, `oot-26Q2_test.parquet`, and split
-metadata as `oot-26Q2.json` in `data/<use_case>/splits`. Training requires
-this metadata file and validates it against the selected use case before
-starting an experiment. Split metadata is logged to MLflow with `split_`
-parameter names and recorded in the training manifest.
+This writes `<split_name>_fit.parquet`, `<split_name>_validation.parquet`,
+`<split_name>_test.parquet`, `<split_name>_monitoring.parquet`, and
+`<split_name>.json` under `data/<use_case>/splits`. Training checks the
+metadata and file counts. The same metadata is logged with `split_` MLflow
+parameter names and included in the manifest. Python callers receive an
+immutable `SplitMetadata` model.
 
-The Python split creation functions return immutable, validated
-`TemporalSplitMetadata` or `StratifiedSplitMetadata` models; use
-`model_dump()` for a dictionary containing the unprefixed JSON fields.
-
-`create-split` splits the provided data based on the use-case's split strategy.
-A stratified-random use case instead accepts `--input_parquet` (parquet file
-location relative to the data directory) and `--random_state`.
-`--test_fraction` and `--monitoring_fraction` specify fractions of the entire
-dataset and default to `0.1` each. The remainder is training data. Setting the
-monitoring fraction to `0` writes an empty monitoring file.
+The three fractions refer to the full input and each defaults to 0.1; fit
+receives the remainder. Monitoring may be zero, in which case an empty
+monitoring file is still written. Every nonempty cohort must contain both
+binary classes. A random use case accepts `--input_parquet` and a split
+`--random_state`. For temporal use cases, cohorts are ordered fit, validation,
+test, monitoring, and equal timestamps stay together. Boundaries approximate
+row fractions; large timestamp groups can cause substantial differences.
+Metadata records both requested and actual fractions.
+Start and end dates must be supplied together, or omitted to use all input.
 
 ### Reproduce an out-of-time experiment
 
@@ -130,10 +129,9 @@ are persistent DVC outputs. Manifest files are named by
 output paths; it does not create a separate archive for each run.
 
 The [pipeline/churn.yaml](pipeline/churn.yaml) DVC parameter preset selects
-the `churn` use case and configures `oot-26Q2`: training from 2025-04-01
-through 2026-03-31 and testing from 2026-04-01 through 2026-06-30, using the
-`dc` classifier. Date bounds are inclusive. Provide the configured training and
-inference CSVs under `data/<use_case>/raw` before running the pipeline:
+the `churn` use case and configures a 70/10/10/10 temporal split within an
+inclusive date window, using the `lr` classifier. Provide the configured training
+and inference CSVs under `data/<use_case>/raw` before running the pipeline:
 
 ```bash
 uv run dvc repro pipeline/churn/dvc.yaml
@@ -161,16 +159,16 @@ uv run dvc add \
 Commit the generated `.dvc` pointers, not the CSV contents.
 
 Add the pipeline and parameter files to Git so DVC can include them in its
-experiment workspace. Then run another quarter/classifier combination as a
+experiment workspace. Then run another split/classifier combination as a
 named DVC experiment:
 
 ```bash
 uv run dvc exp run --name churn-12m-oot \
   --set-param pipeline/churn.yaml:use_case=churn \
   --set-param pipeline/churn.yaml:model.classifier=lr \
-  --set-param pipeline/churn.yaml:split.name=oot-26Q2 \
+  --set-param pipeline/churn.yaml:split.name=temporal-70-10-10-10 \
   --set-param 'pipeline/churn.yaml:split.start_date="2025-04-01"' \
-  --set-param 'pipeline/churn.yaml:split.split_date="2026-04-01"' \
+  --set-param pipeline/churn.yaml:split.test_fraction=0.1 \
   --set-param 'pipeline/churn.yaml:split.end_date="2026-06-30"' \
   --set-param pipeline/churn.yaml:calibration.method=isotonic \
   --set-param pipeline/churn.yaml:training.n_jobs=4 \
@@ -305,7 +303,7 @@ run to MLflow.
 uv run mlkit train \
   --use_case churn \
   --config rf.yaml \
-  --split_name oot-26Q2
+  --split_name temporal-70-10-10-10
 ```
 
 Configuration filenames resolve under `src/config` by default. The default
@@ -318,7 +316,7 @@ tuning, model registration and promotion is executed. The latter options
 are disabled by default. The required `--use_case` selects the data contract,
 with model input `feature_columns` derived from its
 [Pydantic feature schema](#pydantic-feature-schema). Required
-features must be present in both training and test split.
+features must be present in the fit, validation and test cohorts.
 
 Training experiment names are derived from use case and split name, registry
 model names from the use case.
@@ -341,7 +339,7 @@ from mlkit.train import run_training_job
 run_training_job(
     use_case="churn",
     config_file="rf.yaml",
-    split_name="oot-26Q2",
+    split_name="temporal-70-10-10-10",
     register_model=True,
     promote_model=False,
     calibration_method="sigmoid",
@@ -366,11 +364,11 @@ tuning:
 ```
 
 For use-cases with "temporal" dimension, tuning uses deterministic
-expanding-window cross-validation on the fitting portion of the training split.
+expanding-window cross-validation on the fitting cohort.
 Rows with the same timestamp stay in the same fold. The time column must be
 present, and every fold must contain both target classes.
 Use-cases without "temporal" dimension use stratified random folds instead. The
-random threshold holdout and stratified test split are excluded from tuning.
+validation, test and monitoring cohorts are excluded from tuning.
 
 ### Generate batch predictions
 
@@ -422,9 +420,9 @@ Alternatively, pass a manifest path relative to `DATA_DIR`:
 DATA_DIR=$PWD/data/churn \
 uv run mlkit batch-predict \
   --use_case churn \
-  --input_dataset splits/oot-26Q2_test.parquet \
-  --output_dataset predictions/rf_oot-26Q2 \
-  --model_manifest manifests/churn-rf-oot-26Q2.json
+  --input_dataset splits/temporal-70-10-10-10_test.parquet \
+  --output_dataset predictions/rf_temporal-70-10-10-10 \
+  --model_manifest manifests/churn-rf-temporal-70-10-10-10.json
 ```
 
 The manifest option cannot be combined with `--model_name` or
@@ -441,7 +439,7 @@ prevent readiness:
 ```bash
 DATA_DIR=$PWD/data/churn MODEL_NAME=churn-model \
   uv run mlkit serve --use_case churn --host 127.0.0.1 --port 8000 --reload
-DATA_DIR=$PWD/data/churn uv run mlkit serve --use_case churn --model_manifest manifests/churn-lr-oot-26Q2.json
+DATA_DIR=$PWD/data/churn uv run mlkit serve --use_case churn --model_manifest manifests/churn-lr-temporal-70-10-10-10.json
 ```
 
 The service loads the selected model once per process. Its
@@ -727,7 +725,6 @@ calibration:
 
 threshold:
   strategy: max_f1
-  validation_fraction: 0.2
 
 promotion:
   min_delta: 0.005
@@ -743,9 +740,9 @@ Pass the required use case with `--use_case` in the CLI or `use_case=` in a
 Python training call. The selected contract supplies the target, time, and
 feature columns used by training.
 
-The top-level `random_state` seeds the threshold holdout, Optuna sampling and
-random cross-validation folds. Classifier `random_state` parameters and
-dataset-split seeds remain independent.
+The top-level `random_state` seeds Optuna sampling and random cross-validation
+folds. Classifier `random_state` parameters and dataset-split seeds remain
+independent.
 
 `--n_jobs` sets the total CPU job budget for a run. It defaults to `1`, accepts
 positive integers, and uses `-1` to request all available CPUs. During tuning,
@@ -772,15 +769,12 @@ function.
 
 ### Threshold selection
 
-For every use case, a seeded, stratified random portion of the training split
-is reserved for threshold validation. Tuning, calibration and final fitting
-use only the remaining training records. The F1-maximizing threshold
-(`threshold.strategy: max_f1`) is selected from holdout predictions, and the
-separate test set is used only for evaluation.
+The independent validation cohort selects the F1-maximizing threshold
+(`threshold.strategy: max_f1`). Tuning, calibration and final fitting use only
+the fit cohort; the separate test set is used only for evaluation.
 
-Runs log the selected threshold, its respective holdout fraction share, source
-and training seed as MLflow parameters. The reliability diagram is logged under
-`calibration/`.
+Runs log the threshold, validation fraction, source and training seed as MLflow
+parameters. The reliability diagram is logged under `calibration/`.
 
 ### Evaluation
 
@@ -954,7 +948,7 @@ splits under the mounted `data/` directory, train a model in the same Compose
 environment with:
 
 ```bash
-docker compose run --rm api train --config rf.yaml --split_name oot-26Q2
+docker compose run --rm api train --config rf.yaml --split_name temporal-70-10-10-10
 ```
 
 Other CLI commands are available by overriding the default `serve` command,

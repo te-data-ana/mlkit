@@ -8,7 +8,6 @@ from joblib import effective_n_jobs
 from matplotlib.figure import Figure
 from sklearn.base import BaseEstimator
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import train_test_split
 from threadpoolctl import threadpool_limits
 
 from mlkit.config.schemas import TrainingConfig
@@ -40,38 +39,6 @@ class TrainingResult:
     threshold: float
     threshold_data: str
     calibration_figure: Figure
-
-
-def split_threshold_validation(
-    train_df: pd.DataFrame, target_column: str, config: TrainingConfig
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Reserve stratified training rows for independent threshold selection.
-
-    Args:
-        train_df: Training records.
-        target_column: Binary target used for stratification.
-        config: Validation fraction and random seed.
-
-    Returns:
-        The fitting and threshold-validation subsets.
-
-    Raises:
-        ValueError: If a stratified split cannot keep both classes in each subset.
-    """
-    fit_df, validation_df = train_test_split(
-        train_df,
-        test_size=config.threshold.validation_fraction,
-        random_state=config.random_state,
-        stratify=train_df[target_column],
-    )
-    if any(
-        set(part[target_column].unique()) != {0, 1} for part in (fit_df, validation_df)
-    ):
-        raise ValueError(
-            "Threshold fitting and validation data must each contain both "
-            "binary classes."
-        )
-    return fit_df, validation_df
 
 
 def train_model(

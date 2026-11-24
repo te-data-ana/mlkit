@@ -123,7 +123,6 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
     assert logged_parameter_values["imputer_numeric"] == "mean"
     assert logged_parameter_values["calibration_method"] == "sigmoid"
     assert logged_parameter_values["threshold_strategy"] == "max_f1"
-    assert logged_parameter_values["threshold_validation_fraction"] == 0.2
     assert logged_parameter_values["model_tuning_enabled"] is True
     assert logged_parameter_values["model_registration_enabled"] is True
     assert logged_parameter_values["model_promotion_enabled"] is True

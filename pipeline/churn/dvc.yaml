@@ -78,8 +78,10 @@ stages:
       --use_case ${use_case}
       --dataset_name partitioned
       --start_date ${split.start_date}
-      --split_date ${split.split_date}
       --end_date ${split.end_date}
+      --validation_fraction ${split.validation_fraction}
+      --test_fraction ${split.test_fraction}
+      --monitoring_fraction ${split.monitoring_fraction}
       --split_name ${split.name}
     deps:
       - data/${use_case}/partitioned

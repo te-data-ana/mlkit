@@ -12,7 +12,7 @@ from use_cases.churn import CHURN_USE_CASE
 from mlkit.config.schemas import TrainingConfig, TuningConfig
 from mlkit.training import model_training, tuning
 from mlkit.training.calibration import make_cv_splits, make_stratified_random_cv_splits
-from mlkit.training.model_training import split_threshold_validation, train_model
+from mlkit.training.model_training import train_model
 from mlkit.training.tuning import optimize_hyperparameters
 
 
@@ -61,11 +61,8 @@ def test_training_threshold_holdout_and_random_calibration(
     use_case = replace(
         CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
     )
-    fit, validation = split_threshold_validation(train, "churn", config)
-    fit_again, validation_again = split_threshold_validation(train, "churn", config)
-    assert fit.index.equals(fit_again.index)
-    assert validation.index.equals(validation_again.index)
-    assert set(fit.index).isdisjoint(validation.index)
+    fit_df, validation_df = train.iloc[:48], train.iloc[48:]
+    assert set(fit_df.index).isdisjoint(validation_df.index)
     calls = []
     original = model_training.fit_estimator_with_calibration
 
@@ -77,13 +74,13 @@ def test_training_threshold_holdout_and_random_calibration(
     result = train_model(
         use_case=use_case,
         config=config,
-        fit_df=fit,
-        validation_df=validation,
+        fit_df=fit_df,
+        validation_df=validation_df,
         test_df=test,
         calibration_method="sigmoid",
     )
-    assert calls == [(set(fit.index), 17)]
-    assert calls[0][0].isdisjoint(validation.index)
+    assert calls == [(set(fit_df.index), 17)]
+    assert calls[0][0].isdisjoint(validation_df.index)
     assert result.threshold_data == "training_validation"
     assert 0 <= result.threshold <= 1
 
@@ -112,23 +109,3 @@ def test_random_tuning_without_time_column(
     sampler.assert_called_once_with(seed=17)
     assert cv_splits.call_args.kwargs["random_state"] == 17
     assert np.isfinite(result.best_score)
-
-
-def test_threshold_holdout_rejects_insufficient_class_members(
-    config_factory: Callable[..., TrainingConfig],
-) -> None:
-    data = pd.DataFrame({"churn": [0, 0, 0, 1]})
-    with pytest.raises(ValueError, match="least populated class"):
-        split_threshold_validation(
-            train_df=data, target_column="churn", config=config_factory()
-        )
-
-
-def test_threshold_holdout_rejects_partition_without_both_classes(
-    config_factory: Callable[..., TrainingConfig],
-) -> None:
-    data = pd.DataFrame({"churn": [0] * 98 + [1] * 2})
-    with pytest.raises(ValueError, match="must each contain both binary classes"):
-        split_threshold_validation(
-            train_df=data, target_column="churn", config=config_factory()
-        )

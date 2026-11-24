@@ -133,7 +133,6 @@ def log_experiment_result(
         "threshold": result.threshold,
         "threshold_strategy": config.threshold.strategy,
         "threshold_data": result.threshold_data,
-        "threshold_validation_fraction": config.threshold.validation_fraction,
     }
     mlflow.log_params(threshold_parameters)
     # log invocation parameters

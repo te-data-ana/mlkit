@@ -150,6 +150,7 @@ def read_parquet_dataset(
     end: str | pd.Timestamp | None = None,
     *,
     settings: RuntimeSettings | None = None,
+    require_valid_timestamps: bool = False,
 ) -> pd.DataFrame:
     """
     Read rows from a Parquet file or dataset.
@@ -161,7 +162,9 @@ def read_parquet_dataset(
     treated as exact inclusive bounds.
 
     When both ``start`` and ``end`` are ``None``, the entire dataset is
-    loaded without partition pruning or timestamp filtering.
+    loaded without partition pruning or timestamp filtering. When
+    ``require_valid_timestamps`` is true, the timestamp column is read from
+    the entire dataset before applying an optional date filter.
 
     Args:
         dataset_name:
@@ -183,6 +186,8 @@ def read_parquet_dataset(
             together with ``start``. If both ``start`` and ``end`` are
             ``None``, the entire dataset is loaded. Defaults to ``None``.
         settings: Runtime snapshot used to locate the dataset.
+        require_valid_timestamps: Reject missing or invalid timestamps before
+            filtering, including those outside the selected partitions.
 
     Returns:
         A DataFrame containing either:
@@ -208,9 +213,14 @@ def read_parquet_dataset(
         raise FileNotFoundError(msg)
 
     if timestamp_column is None:
-        if start is not None or end is not None:
+        if start is not None or end is not None or require_valid_timestamps:
             raise ValueError("Date bounds require a timestamp column.")
         return pd.read_parquet(dataset_dir).reset_index(drop=True)
+
+    if require_valid_timestamps:
+        timestamps = pd.read_parquet(dataset_dir, columns=[timestamp_column])
+        if pd.to_datetime(timestamps[timestamp_column], errors="coerce").isna().any():
+            raise ValueError("Dataset timestamps must be valid and non-missing.")
 
     if start is None and end is None:
         df = pd.read_parquet(dataset_dir)
