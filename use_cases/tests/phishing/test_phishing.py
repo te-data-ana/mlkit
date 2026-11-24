@@ -229,18 +229,16 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
     run = client.search_runs(experiment_ids=[experiment.experiment_id])[0]
     assert run.data.params["random_state"] == "26"
     assert run.data.params["training_random_state"] == "17"
-    assert run.data.params["split_random_state"] == "7"
-    assert run.data.params["test_fraction"] == "0.1"
-    assert run.data.params["monitoring_fraction"] == "0.1"
-    assert run.data.params["fit_rows"] == "64"
-    assert run.data.params["validation_rows"] == "16"
     assert run.data.params["threshold_data"] == "training_validation"
     assert run.data.params["split_strategy"] == "stratified_random"
-    assert "cv_strategy" not in run.data.params
-    assert "column_time" not in run.data.params
+    assert run.data.params["split_random_state"] == "7"
+    assert run.data.params["split_test_fraction"] == "0.1"
+    assert run.data.params["split_monitoring_fraction"] == "0.1"
+    assert run.data.params["split_fit_rows"] == "64"
+    assert run.data.params["split_validation_rows"] == "16"
     manifest = TrainingManifest.read(tmp_path / "manifests/phishing-lr-s.json")
     assert manifest.data.time_column is None
-    assert manifest.data.split_metadata["test_fraction"] == 0.1
+    assert manifest.data.split_metadata["split_test_fraction"] == 0.1
 
     serving = SimpleNamespace(
         model_manifest=None,

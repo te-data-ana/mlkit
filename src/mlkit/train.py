@@ -214,8 +214,8 @@ def run_training_job(
                         f"Split metadata '{split_metadata_path}' has invalid dates."
                     )
             split_metadata = {
-                "strategy": actual_strategy,
-                **{key: payload[key] for key in required},
+                "split_strategy": actual_strategy,
+                **{"split_" + key: payload[key] for key in required},
             }
 
         logger.info("Loaded training configuration from '%s'.", config_file_path)
@@ -258,8 +258,8 @@ def run_training_job(
         fit_df, validation_df = split_threshold_validation(
             train_df, selected_use_case.target_column, config
         )
-        split_metadata["fit_rows"] = len(fit_df)
-        split_metadata["validation_rows"] = len(validation_df)
+        split_metadata["split_fit_rows"] = len(fit_df)
+        split_metadata["split_validation_rows"] = len(validation_df)
         logger.info(
             "Reserved %d training rows for threshold validation; fitting on %d rows.",
             len(validation_df),
@@ -308,10 +308,6 @@ def run_training_job(
                 if env_value := os.environ.get(env_name):
                     mlflow.set_tag(tag_name, env_value)
             logged_split_metadata = dict(split_metadata)
-            if "random_state" in logged_split_metadata:
-                logged_split_metadata["split_random_state"] = logged_split_metadata.pop(
-                    "random_state"
-                )
             mlflow.log_params(logged_split_metadata)
             logger.info("Logged split metadata to MLflow: %s.", split_metadata)
             model_params_override = None

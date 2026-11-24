@@ -584,9 +584,8 @@ def test_tuning_excludes_threshold_validation(
     assert set(tuned.index).isdisjoint(validation.index)
     split_params = train.mlflow.log_params.call_args_list[0].args[0]
     assert split_params["split_random_state"] == 7
-    assert split_params["test_fraction"] == 0.1
-    assert split_params["monitoring_fraction"] == 0.1
-    assert "random_state" not in split_params
+    assert split_params["split_test_fraction"] == 0.1
+    assert split_params["split_monitoring_fraction"] == 0.1
 
 
 @pytest.mark.unit

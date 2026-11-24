@@ -39,7 +39,7 @@ class ModelCardBuilder:
         metrics = context.evaluation.metrics
         decision = context.lifecycle.promotion_decision
         split_metadata = context.data.split_metadata
-        strategy = split_metadata["strategy"]
+        strategy = split_metadata["split_strategy"]
         random_split = strategy == "stratified_random"
         detail_rows = [
             f"| Split Strategy | {str(strategy).replace('_', ' ').capitalize()} |"
@@ -47,14 +47,14 @@ class ModelCardBuilder:
         if not random_split and context.data.time_column is not None:
             detail_rows.append(f"| Time Column | {context.data.time_column} |")
         for key, label in (
-            ("train_start", "Training Start"),
-            ("train_end", "Training End"),
-            ("test_start", "Test Start"),
-            ("test_end", "Test End"),
-            ("random_state", "Split Seed"),
-            ("test_fraction", "Test Fraction"),
-            ("monitoring_fraction", "Monitoring Fraction"),
-            ("monitoring_rows", "Monitoring Cohort Records"),
+            ("split_train_start", "Training Start"),
+            ("split_train_end", "Training End"),
+            ("split_test_start", "Test Start"),
+            ("split_test_end", "Test End"),
+            ("split_random_state", "Split Seed"),
+            ("split_test_fraction", "Test Fraction"),
+            ("split_monitoring_fraction", "Monitoring Fraction"),
+            ("split_monitoring_rows", "Monitoring Cohort Records"),
         ):
             if key in split_metadata:
                 detail_rows.append(f"| {label} | {split_metadata[key]} |")
@@ -128,10 +128,10 @@ Trained on {context.model.use_case} data.
 | Property | Value |
 |----------|-------|
 | Target Column | {context.data.target_column} |
-| Training Cohort Records | {split_metadata["train_rows"]} |
-| Fitting Cohort Records | {split_metadata["fit_rows"]} |
-| Threshold Cohort Records | {split_metadata["validation_rows"]} |
-| Test Cohort Records | {split_metadata["test_rows"]} |
+| Training Cohort Records | {split_metadata["split_train_rows"]} |
+| Fitting Cohort Records | {split_metadata["split_fit_rows"]} |
+| Threshold Cohort Records | {split_metadata["split_validation_rows"]} |
+| Test Cohort Records | {split_metadata["split_test_rows"]} |
 {split_rows}
 | Feature Count | {context.training.feature_count} |
 

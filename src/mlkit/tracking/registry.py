@@ -252,7 +252,7 @@ class ModelRegistry:
         run = self.client.get_run(run_id=run_id)
         self._ensure_run_use_case(
             run_id=run_id,
-            recorded_use_case=run.data.params.get("use_case"),
+            recorded_use_case=run.data.tags.get("use_case_name"),
             expected_use_case=expected_use_case,
         )
 
@@ -295,7 +295,7 @@ class ModelRegistry:
         run = self.client.get_run(run_id=model_version_object.run_id)
         self._ensure_run_use_case(
             run_id=model_version_object.run_id,
-            recorded_use_case=run.data.params.get("use_case"),
+            recorded_use_case=run.data.tags.get("use_case_name"),
             expected_use_case=expected_use_case,
         )
         model = self.load_model_by_version(

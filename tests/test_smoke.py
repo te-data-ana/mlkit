@@ -537,8 +537,8 @@ def test_package_main_dispatches_create_split(
     use_case = SimpleNamespace(time_column="event_date", split_strategy="temporal")
     observed: dict[str, object] = {}
 
-    def fake_create_split(use_case_arg: object, **kwargs: object) -> dict[str, str]:
-        observed["use_case"] = use_case_arg
+    def fake_create_split(use_case: object, **kwargs: object) -> dict[str, str]:
+        observed["use_case"] = use_case
         observed.update(kwargs)
         return {"strategy": "temporal"}
 

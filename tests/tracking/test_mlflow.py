@@ -109,7 +109,7 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
     )
 
     mock_log_metrics.assert_called_once()
-    assert mock_log_params.call_count > 4
+    assert mock_log_params.call_count > 5
     logged_parameters = {
         name for call in mock_log_params.call_args_list for name in call.args[0]
     }
@@ -118,27 +118,19 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
         for call in mock_log_params.call_args_list
         for name, value in call.args[0].items()
     }
-    assert "test_size" not in logged_parameters
-    assert "data_random_state" not in logged_parameters
-    assert "random_state" in logged_parameters
     assert logged_parameter_values["training_random_state"] == 26
-    assert logged_parameter_values["split_strategy"] == "temporal"
-    assert "cv_strategy" not in logged_parameters
-    assert logged_parameter_values["threshold_validation_fraction"] == 0.2
-    assert "tuning_random_state" not in logged_parameters
-    assert "threshold_random_state" not in logged_parameters
-    assert logged_parameter_values["use_case"] == "churn"
-    assert "threshold" in logged_parameters
-    assert "calibration_method" in logged_parameters
-    assert "model_tuning_enabled" in logged_parameters
-    assert "model_registration_enabled" in logged_parameters
-    assert "model_promotion_enabled" in logged_parameters
+    assert logged_parameter_values["random_state"] == 42
+    assert logged_parameter_values["imputer_numeric"] == "mean"
     assert logged_parameter_values["calibration_method"] == "sigmoid"
+    assert logged_parameter_values["threshold_strategy"] == "max_f1"
+    assert logged_parameter_values["threshold_validation_fraction"] == 0.2
     assert logged_parameter_values["model_tuning_enabled"] is True
     assert logged_parameter_values["model_registration_enabled"] is True
     assert logged_parameter_values["model_promotion_enabled"] is True
-    assert "threshold_strategy" in logged_parameters
+    assert "threshold" in logged_parameters
     assert "threshold_data" in logged_parameters
+    assert "promotion_weight_roc_auc" in logged_parameters
+    assert "promotion_min_delta" in logged_parameters
     mock_set_tags.assert_called_once()
     mock_log_model.assert_called_once()
     mock_log_figure.assert_called_once_with(

@@ -67,15 +67,15 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 time_column="reference_date",
                 split_name="oot_26q1",
                 split_metadata={
-                    "strategy": "temporal",
-                    "train_rows": 100,
-                    "test_rows": 25,
-                    "fit_rows": 80,
-                    "validation_rows": 20,
-                    "train_start": "2025-01-01T00:00:00",
-                    "train_end": "2025-12-31T00:00:00",
-                    "test_start": "2026-01-01T00:00:00",
-                    "test_end": "2026-03-31T00:00:00",
+                    "split_strategy": "temporal",
+                    "split_train_rows": 100,
+                    "split_test_rows": 25,
+                    "split_fit_rows": 80,
+                    "split_validation_rows": 20,
+                    "split_train_start": "2025-01-01T00:00:00",
+                    "split_train_end": "2025-12-31T00:00:00",
+                    "split_test_start": "2026-01-01T00:00:00",
+                    "split_test_end": "2026-03-31T00:00:00",
                 },
             ),
             training=ManifestTraining(
@@ -330,13 +330,14 @@ def sample_config_yaml(mlflow_test_setup: dict[str, Any]) -> Path:
     config_path.write_text(
         yaml.safe_dump(
             {
-                "preprocessing": {
-                    "numeric_impute_strategy": "median",
-                    "categorical_impute_strategy": "most_frequent",
-                },
+                "random_state": 26,
                 "model": {
                     "classifier": "lr",
                     "classifier_params": {"random_state": 42},
+                },
+                "preprocessing": {
+                    "numeric_impute_strategy": "median",
+                    "categorical_impute_strategy": "most_frequent",
                 },
                 "calibration": {
                     "n_splits": 3,

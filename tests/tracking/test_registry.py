@@ -76,9 +76,11 @@ def test_registry_loads_registered_alias_with_its_threshold(
     model = object()
     registry.get_model_version_by_alias = Mock(return_value=model_version)
     registry.load_model_by_version = Mock(return_value=model)
+    registry.client.get_run.return_value.data.tags = {
+        "use_case_name": "churn",
+    }
     registry.client.get_run.return_value.data.params = {
         "threshold": "0.35",
-        "use_case": "churn",
     }
 
     loaded = registry.load_registered_model(
@@ -109,9 +111,11 @@ def test_registry_loads_registered_version_with_its_threshold(
     model = object()
     registry.get_model_version = Mock(return_value=model_version_object)
     registry.load_model_by_version = Mock(return_value=model)
+    registry.client.get_run.return_value.data.tags = {
+        "use_case_name": "churn",
+    }
     registry.client.get_run.return_value.data.params = {
         "threshold": "0.35",
-        "use_case": "churn",
     }
 
     loaded = registry.load_registered_model(
@@ -148,9 +152,11 @@ def test_registry_rejects_mismatched_use_case_before_loading_model(
     registry.get_model_version_by_alias = Mock(return_value=model_version)
     load_model = Mock()
     registry.load_model_by_version = load_model
+    registry.client.get_run.return_value.data.tags = {
+        "use_case_name": "churn",
+    }
     registry.client.get_run.return_value.data.params = {
         "threshold": "0.35",
-        "use_case": "churn",
     }
 
     with pytest.raises(ValueError, match="not selected use case 'alternate'"):
@@ -171,6 +177,9 @@ def test_registry_rejects_runs_without_use_case_identity(
     registry.get_model_version_by_alias = Mock(return_value=model_version)
     load_model = Mock()
     registry.load_model_by_version = load_model
+    registry.client.get_run.return_value.data.tags = {
+        "use_case_name": None,
+    }
     registry.client.get_run.return_value.data.params = {"threshold": "0.35"}
 
     with pytest.raises(ValueError, match="does not record a use-case name"):

@@ -131,15 +131,15 @@ def test_random_split_card_has_no_temporal_claims(
         data=replace(
             manifest.data,
             split_metadata={
-                "strategy": "stratified_random",
-                "random_state": 42,
-                "train_rows": 80,
-                "fit_rows": 64,
-                "validation_rows": 16,
-                "test_rows": 10,
-                "monitoring_rows": 10,
-                "test_fraction": 0.1,
-                "monitoring_fraction": 0.1,
+                "split_strategy": "stratified_random",
+                "split_random_state": 42,
+                "split_train_rows": 80,
+                "split_fit_rows": 64,
+                "split_validation_rows": 16,
+                "split_test_rows": 10,
+                "split_monitoring_rows": 10,
+                "split_test_fraction": 0.1,
+                "split_monitoring_fraction": 0.1,
             },
         ),
         training=replace(manifest.training, threshold_data="training_validation"),
@@ -153,7 +153,9 @@ def test_random_split_card_has_no_temporal_claims(
     assert "| Monitoring Fraction | 0.1 |" in card
 
     empty_metadata = dict(
-        manifest.data.split_metadata, monitoring_rows=0, monitoring_fraction=0.0
+        manifest.data.split_metadata,
+        split_monitoring_rows=0,
+        split_monitoring_fraction=0.0,
     )
     empty_manifest = replace(
         manifest, data=replace(manifest.data, split_metadata=empty_metadata)

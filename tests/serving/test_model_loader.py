@@ -216,7 +216,7 @@ def test_load_model_loads_logged_mlflow_model_using_manifest(
     estimator = LogisticRegression().fit([[0], [1], [2], [3]], [0, 0, 1, 1])
 
     with model_loader.mlflow.start_run(experiment_id=experiment_id) as run:
-        model_loader.mlflow.log_param("use_case", "churn")
+        model_loader.mlflow.set_tag("use_case_name", "churn")
         model_info = model_loader.mlflow.sklearn.log_model(
             estimator,
             name="model",
