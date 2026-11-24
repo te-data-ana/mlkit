@@ -4,9 +4,17 @@ import math
 from decimal import Decimal
 from numbers import Real
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, Self
 
 import pandas as pd
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 from sklearn.model_selection import train_test_split
 
 from mlkit.config import RuntimeSettings
@@ -18,18 +26,79 @@ from mlkit.use_cases import UseCase
 logger = logging.getLogger(__name__)
 
 
-class SplitMetadata(TypedDict):
-    strategy: Literal["temporal", "stratified_random"]
-    train_rows: int
-    test_rows: int
-    train_start: NotRequired[str]
-    train_end: NotRequired[str]
-    test_start: NotRequired[str]
-    test_end: NotRequired[str]
-    monitoring_rows: NotRequired[int]
-    test_fraction: NotRequired[float]
-    monitoring_fraction: NotRequired[float]
-    random_state: NotRequired[int]
+NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
+SplitFraction = (
+    Annotated[int, Field(strict=True)]
+    | Annotated[float, Field(strict=True, allow_inf_nan=False)]
+)
+NonEmptyString = Annotated[str, Field(strict=True, min_length=1)]
+
+
+class _SplitMetadataBase(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    train_rows: NonNegativeInt
+    test_rows: NonNegativeInt
+
+
+class TemporalSplitMetadata(_SplitMetadataBase):
+    """Metadata for a temporal train/test split."""
+
+    strategy: Literal["temporal"]
+    train_start: NonEmptyString
+    train_end: NonEmptyString
+    test_start: NonEmptyString
+    test_end: NonEmptyString
+
+
+class StratifiedSplitMetadata(_SplitMetadataBase):
+    """Metadata for a stratified random train/test/monitoring split."""
+
+    strategy: Literal["stratified_random"]
+    monitoring_rows: NonNegativeInt
+    test_fraction: SplitFraction
+    monitoring_fraction: SplitFraction
+    random_state: NonNegativeInt
+
+    @model_validator(mode="after")
+    def validate_fractions(self) -> Self:
+        """Validate the combined held-out fraction."""
+        if (
+            self.test_fraction <= 0
+            or self.monitoring_fraction < 0
+            or self.test_fraction + self.monitoring_fraction >= 1
+        ):
+            raise ValueError(
+                "Test fraction must be positive, monitoring fraction nonnegative, "
+                "and their sum less than one."
+            )
+        return self
+
+
+SplitMetadata = Annotated[
+    TemporalSplitMetadata | StratifiedSplitMetadata, Field(discriminator="strategy")
+]
+_split_metadata_adapter = TypeAdapter(SplitMetadata)
+
+
+def load_split_metadata(path: Path) -> SplitMetadata:
+    """Load and validate required split metadata from a JSON file.
+
+    Args:
+        path: Path to the split metadata JSON file.
+
+    Returns:
+        Validated metadata for the recorded split strategy.
+
+    Raises:
+        FileNotFoundError: If the metadata file is missing.
+        ValueError: If the JSON or metadata is invalid.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return _split_metadata_adapter.validate_python(payload)
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise ValueError(f"Invalid split metadata '{path}': {exc}") from exc
 
 
 def load_and_validate_training_splits(
@@ -79,16 +148,16 @@ def _write_split(
     metadata: SplitMetadata,
     split_name: str,
     settings: RuntimeSettings | None,
-) -> SplitMetadata:
+) -> None:
     """Write split DataFrames to Parquet files and metadata to JSON file."""
     split_dir = (settings or RuntimeSettings()).data_dir / "splits"
     split_dir.mkdir(parents=True, exist_ok=True)
     for name, part in parts.items():
         part.to_parquet(split_dir / f"{split_name}_{name}.parquet", index=False)
     (split_dir / f"{split_name}.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(metadata.model_dump(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
-    return metadata
 
 
 def _temporal_bounds(
@@ -116,7 +185,7 @@ def create_time_based_split(
     end_date: str | pd.Timestamp,
     split_name: str = "default",
     settings: RuntimeSettings | None = None,
-) -> SplitMetadata:
+) -> TemporalSplitMetadata:
     """Write an out-of-time train/test split and return its metadata.
 
     Args:
@@ -129,7 +198,7 @@ def create_time_based_split(
         settings: Runtime snapshot used for output locations.
 
     Returns:
-        JSON-compatible split metadata.
+        Validated temporal split metadata.
 
     Raises:
         ValueError: If the time column, date bounds, or cohorts are invalid.
@@ -147,7 +216,7 @@ def create_time_based_split(
         raise ValueError("Training split is empty.")
     if test.empty:
         raise ValueError("Test split is empty.")
-    metadata = SplitMetadata(
+    metadata = TemporalSplitMetadata(
         strategy="temporal",
         train_rows=len(train),
         test_rows=len(test),
@@ -156,12 +225,13 @@ def create_time_based_split(
         test_start=test[time_column].min().isoformat(),
         test_end=test[time_column].max().isoformat(),
     )
-    return _write_split(
+    _write_split(
         parts={"train": train, "test": test},
         metadata=metadata,
         split_name=split_name,
         settings=settings,
     )
+    return metadata
 
 
 def create_stratified_split(
@@ -173,7 +243,7 @@ def create_stratified_split(
     monitoring_fraction: float = 0.1,
     random_state: int = 42,
     settings: RuntimeSettings | None = None,
-) -> SplitMetadata:
+) -> StratifiedSplitMetadata:
     """Write seeded stratified train/test/monitoring cohorts.
 
     Args:
@@ -186,7 +256,7 @@ def create_stratified_split(
         settings: Runtime snapshot used for output locations.
 
     Returns:
-        JSON-compatible split metadata.
+        Validated stratified split metadata.
 
     Raises:
         ValueError: If fractions, target, or stratified cohorts are invalid.
@@ -231,7 +301,7 @@ def create_stratified_split(
         if not part.empty
     ):
         raise ValueError("Each nonempty stratified cohort must contain both classes.")
-    metadata = SplitMetadata(
+    metadata = StratifiedSplitMetadata(
         strategy="stratified_random",
         train_rows=len(train),
         test_rows=len(test),
@@ -240,12 +310,13 @@ def create_stratified_split(
         monitoring_fraction=float(monitoring_fraction),
         random_state=random_state,
     )
-    return _write_split(
+    _write_split(
         parts={"train": train, "test": test, "monitoring": monitoring},
         metadata=metadata,
         split_name=split_name,
         settings=settings,
     )
+    return metadata
 
 
 def create_split(
@@ -278,7 +349,7 @@ def create_split(
         settings: Runtime snapshot used for input and output locations.
 
     Returns:
-        JSON-compatible split metadata.
+        Validated metadata for the selected split strategy.
 
     Raises:
         ValueError: If arguments are incompatible with the selected strategy.

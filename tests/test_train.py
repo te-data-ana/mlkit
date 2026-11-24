@@ -16,6 +16,22 @@ from mlkit.training import TuningResult
 from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
+TEMPORAL_METADATA = {
+    "strategy": "temporal",
+    "train_rows": 10,
+    "test_rows": 2,
+    "train_start": "2026-01-01T00:00:00",
+    "train_end": "2026-01-10T00:00:00",
+    "test_start": "2026-02-01T00:00:00",
+    "test_end": "2026-02-02T00:00:00",
+}
+
+
+def write_temporal_metadata(directory: Path, name: str = "temporal") -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{name}.json").write_text(
+        json.dumps(TEMPORAL_METADATA), encoding="utf-8"
+    )
 
 
 @pytest.mark.unit
@@ -135,11 +151,13 @@ def test_run_training_job_resolves_required_use_case_before_training(
 def test_run_training_job_derives_experiment_from_use_case_and_split(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.INFO)
+    write_temporal_metadata(tmp_path / "splits")
     settings = SimpleNamespace(
         config_dir=Path("config"),
-        data_dir=Path("data"),
+        data_dir=tmp_path,
         artifact_dir=Path("artifacts"),
         mlflow_tracking_uri="sqlite:///tracking.db",
     )
@@ -217,7 +235,7 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
     set_tag.assert_any_call("git_commit", ANY)
     load_splits.assert_called_once_with(
         split_name=split_name,
-        split_dir=Path("data") / "splits",
+        split_dir=tmp_path / "splits",
         use_case=CHURN_USE_CASE,
     )
     train_model_mock.assert_called_once_with(
@@ -253,6 +271,7 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
     config_factory: Callable[..., TrainingConfig],
 ) -> None:
     use_case = CHURN_USE_CASE.name
+    write_temporal_metadata(tmp_path / "splits")
     settings = SimpleNamespace(
         config_dir=tmp_path,
         data_dir=tmp_path,
@@ -348,6 +367,13 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
     manifest = TrainingManifest.read(tmp_path / f"manifests/{run_name}.json")
     assert manifest.model.use_case == use_case
     assert manifest.data.time_column == "reference_date"
+    expected_split_metadata = {
+        **{f"split_{key}": value for key, value in TEMPORAL_METADATA.items()},
+        "split_fit_rows": 0,
+        "split_validation_rows": 0,
+    }
+    assert manifest.data.split_metadata == expected_split_metadata
+    train.mlflow.log_params.assert_any_call(expected_split_metadata)
     assert manifest.training.tuning_enabled is False
     assert manifest.training.calibration == "isotonic"
     assert manifest.training.n_jobs == 3
@@ -361,8 +387,10 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
 @pytest.mark.unit
 def test_run_training_job_logs_tuning_result_and_fits_final_model(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     use_case = CHURN_USE_CASE.name
+    write_temporal_metadata(tmp_path / "splits")
     config = SimpleNamespace(
         random_state=19,
         model=SimpleNamespace(classifier="rf"),
@@ -387,7 +415,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
     split_name = "temporal"
     settings = SimpleNamespace(
         config_dir=Path("config"),
-        data_dir=Path("data"),
+        data_dir=tmp_path,
         artifact_dir=Path("artifacts"),
         mlflow_tracking_uri="sqlite:///tracking.db",
         mlflow_experiment_name="experiment",
@@ -457,7 +485,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
     assert result is final_training
     load_splits.assert_called_once_with(
         split_name=split_name,
-        split_dir=Path("data") / "splits",
+        split_dir=tmp_path / "splits",
         use_case=CHURN_USE_CASE,
     )
     assert optimizer.call_count == 1
@@ -583,9 +611,38 @@ def test_tuning_excludes_threshold_validation(
     assert train.train_model.call_args.kwargs["validation_df"].equals(validation)
     assert set(tuned.index).isdisjoint(validation.index)
     split_params = train.mlflow.log_params.call_args_list[0].args[0]
-    assert split_params["split_random_state"] == 7
-    assert split_params["split_test_fraction"] == 0.1
-    assert split_params["split_monitoring_fraction"] == 0.1
+    assert split_params == {
+        "split_strategy": "stratified_random",
+        "split_train_rows": 50,
+        "split_test_rows": 2,
+        "split_monitoring_rows": 2,
+        "split_random_state": 7,
+        "split_test_fraction": 0.1,
+        "split_monitoring_fraction": 0.1,
+        "split_fit_rows": len(fit),
+        "split_validation_rows": len(validation),
+    }
+
+
+@pytest.mark.unit
+def test_training_requires_split_metadata_before_experiment_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    config_factory: Callable[..., TrainingConfig],
+    tmp_path: Path,
+) -> None:
+    config = config_factory()
+    monkeypatch.setattr(train, "load_config", lambda **_: (config, tmp_path / "c.yaml"))
+    setup = MagicMock()
+    monkeypatch.setattr(train, "setup_local_experiment", setup)
+    with pytest.raises(FileNotFoundError, match="missing.json"):
+        train.run_training_job(
+            use_case="churn",
+            config_file="c.yaml",
+            split_name="missing",
+            config_dir=tmp_path,
+            split_dir=tmp_path,
+        )
+    setup.assert_not_called()
 
 
 @pytest.mark.unit
@@ -627,6 +684,7 @@ def test_registration_uses_derived_name_and_only_promotion_aliases(
     promote_model: bool,
 ) -> None:
     use_case = CHURN_USE_CASE.name
+    write_temporal_metadata(tmp_path / "splits")
     config = SimpleNamespace(
         model=SimpleNamespace(classifier="rf"),
         calibration=SimpleNamespace(n_splits=3, n_bins=10),

@@ -93,7 +93,14 @@ uv run mlkit create-split \
 ```
 
 This creates `oot-26Q2_train.parquet`, `oot-26Q2_test.parquet`, and split
-metadata in `data/<use_case>/splits`.
+metadata as `oot-26Q2.json` in `data/<use_case>/splits`. Training requires
+this metadata file and validates it against the selected use case before
+starting an experiment. Split metadata is logged to MLflow with `split_`
+parameter names and recorded in the training manifest.
+
+The Python split creation functions return immutable, validated
+`TemporalSplitMetadata` or `StratifiedSplitMetadata` models; use
+`model_dump()` for a dictionary containing the unprefixed JSON fields.
 
 `create-split` splits the provided data based on the use-case's split strategy.
 A stratified-random use case instead accepts `--input_parquet` (parquet file

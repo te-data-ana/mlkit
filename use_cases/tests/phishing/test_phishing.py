@@ -238,7 +238,21 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
     assert run.data.params["split_validation_rows"] == "16"
     manifest = TrainingManifest.read(tmp_path / "manifests/phishing-lr-s.json")
     assert manifest.data.time_column is None
-    assert manifest.data.split_metadata["split_test_fraction"] == 0.1
+    expected_split_metadata = {
+        "split_strategy": "stratified_random",
+        "split_train_rows": 80,
+        "split_test_rows": 10,
+        "split_monitoring_rows": 10,
+        "split_random_state": 7,
+        "split_test_fraction": 0.1,
+        "split_monitoring_fraction": 0.1,
+        "split_fit_rows": 64,
+        "split_validation_rows": 16,
+    }
+    assert manifest.data.split_metadata == expected_split_metadata
+    assert {key: run.data.params[key] for key in expected_split_metadata} == {
+        key: str(value) for key, value in expected_split_metadata.items()
+    }
 
     serving = SimpleNamespace(
         model_manifest=None,

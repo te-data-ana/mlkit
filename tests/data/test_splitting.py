@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from mlkit.data import splitting, storage
 from mlkit.data.splitting import create_stratified_split, create_time_based_split
@@ -56,7 +57,7 @@ def test_create_time_based_split_writes_datasets_and_returns_metadata(
 
     assert train["value"].tolist() == [1, 2]
     assert test["value"].tolist() == [3, 4]
-    assert metadata == {
+    assert metadata.model_dump() == {
         "strategy": "temporal",
         "train_rows": 2,
         "test_rows": 2,
@@ -65,7 +66,9 @@ def test_create_time_based_split_writes_datasets_and_returns_metadata(
         "test_start": "2026-03-15T00:00:00",
         "test_end": "2026-04-15T00:00:00",
     }
-    assert json.loads((splits_dir / "baseline.json").read_text()) == metadata
+    assert splitting.load_split_metadata(splits_dir / "baseline.json") == metadata
+    with pytest.raises(ValidationError, match="frozen"):
+        metadata.train_rows = 3
 
 
 @pytest.mark.unit
@@ -197,9 +200,12 @@ def test_stratified_split_respects_fractions_and_metadata(
     assert all(part["label"].mean() == 0.5 for part in parts if not part.empty)
     assert len(set.union(*(set(part["id"]) for part in parts))) == 100
     assert sum(map(len, parts)) == 100
-    assert metadata == json.loads((data_dir / "splits" / "s.json").read_text())
-    assert metadata["test_fraction"] == test_fraction
-    assert metadata["monitoring_fraction"] == monitoring_fraction
+    assert metadata.model_dump() == json.loads(
+        (data_dir / "splits" / "s.json").read_text()
+    )
+    assert splitting.load_split_metadata(data_dir / "splits" / "s.json") == metadata
+    assert metadata.test_fraction == test_fraction
+    assert metadata.monitoring_fraction == monitoring_fraction
     assert list(parts[2].columns) == list(df.columns)
 
 
@@ -212,9 +218,9 @@ def test_stratified_split_uses_sklearn_two_step_rounding(data_dir: Path) -> None
         split_name="odd",
     )
     assert (
-        metadata["train_rows"],
-        metadata["test_rows"],
-        metadata["monitoring_rows"],
+        metadata.train_rows,
+        metadata.test_rows,
+        metadata.monitoring_rows,
     ) == (80, 10, 11)
 
 
@@ -241,7 +247,7 @@ def test_temporal_split_keeps_inclusive_window_and_split_boundary(
     test = pd.read_parquet(data_dir / "splits/default_test.parquet")
     assert train["value"].tolist() == [1]
     assert test["value"].tolist() == [2, 3]
-    assert metadata["test_end"] == "2026-03-01T00:00:00"
+    assert metadata.test_end == "2026-03-01T00:00:00"
 
 
 @pytest.mark.unit
@@ -290,5 +296,91 @@ def test_create_split_loads_partitioned_temporal_dataset(data_dir: Path) -> None
         split_date="2026-02-01",
         end_date="2026-02-28",
     )
-    assert metadata["strategy"] == "temporal"
-    assert (metadata["train_rows"], metadata["test_rows"]) == (1, 1)
+    assert metadata.strategy == "temporal"
+    assert (metadata.train_rows, metadata.test_rows) == (1, 1)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("strategy", "unknown"),
+        ("train_rows", True),
+        ("test_rows", -1),
+        ("monitoring_rows", 1.0),
+        ("random_state", -1),
+        ("test_fraction", True),
+        ("test_fraction", "0.1"),
+        ("test_fraction", float("nan")),
+        ("test_fraction", 0),
+        ("monitoring_fraction", float("inf")),
+        ("monitoring_fraction", -0.1),
+        ("monitoring_fraction", 0.9),
+    ],
+)
+def test_load_split_metadata_rejects_invalid_values(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    payload: dict[str, object] = {
+        "strategy": "stratified_random",
+        "train_rows": 8,
+        "test_rows": 1,
+        "monitoring_rows": 1,
+        "test_fraction": 0.1,
+        "monitoring_fraction": 0.1,
+        "random_state": 42,
+    }
+    payload[field] = value
+    path = tmp_path / "split.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid split metadata.*split.json"):
+        splitting.load_split_metadata(path)
+
+
+@pytest.mark.unit
+def test_load_split_metadata_requires_fields_and_nonempty_dates(tmp_path: Path) -> None:
+    path = tmp_path / "split.json"
+    payload = {
+        "strategy": "temporal",
+        "train_rows": 1,
+        "test_rows": 1,
+        "train_start": "start",
+        "train_end": "end",
+        "test_start": "start",
+        "test_end": "",
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="test_end"):
+        splitting.load_split_metadata(path)
+    del payload["test_end"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="test_end"):
+        splitting.load_split_metadata(path)
+    path.write_text("{", encoding="utf-8")
+    with pytest.raises(ValueError, match="split.json"):
+        splitting.load_split_metadata(path)
+
+
+@pytest.mark.unit
+def test_load_split_metadata_preserves_integer_fractions_and_ignores_extras(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "split.json"
+    path.write_text(
+        json.dumps(
+            {
+                "strategy": "stratified_random",
+                "train_rows": 8,
+                "test_rows": 2,
+                "monitoring_rows": 0,
+                "test_fraction": 0.2,
+                "monitoring_fraction": 0,
+                "random_state": 42,
+                "extra": "ignored",
+            }
+        ),
+        encoding="utf-8",
+    )
+    metadata = splitting.load_split_metadata(path)
+    assert type(metadata.model_dump()["monitoring_fraction"]) is int
+    assert "extra" not in metadata.model_dump()

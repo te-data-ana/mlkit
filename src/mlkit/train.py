@@ -1,6 +1,5 @@
 import json
 import logging
-import math
 import os
 import subprocess
 from dataclasses import asdict
@@ -13,7 +12,7 @@ from mlkit.config import (
     load_config,
 )
 from mlkit.config.settings import RuntimeSettings
-from mlkit.data.splitting import load_and_validate_training_splits
+from mlkit.data.splitting import load_and_validate_training_splits, load_split_metadata
 from mlkit.tracking import (
     LoggedModelReference,
     ModelCardBuilder,
@@ -85,8 +84,8 @@ def run_training_job(
         configuration, feature names, and selected threshold.
 
     Raises:
-        FileNotFoundError: If the configuration or training data file is not
-            found.
+        FileNotFoundError: If the configuration, split metadata, or training
+            data file is not found.
         pydantic.ValidationError: If a training record violates its schema.
         TypeError: If run-time boolean options are not booleans.
         ValueError: If a run-time training option, classifier, or promotion
@@ -144,79 +143,14 @@ def run_training_job(
         run_name = f"{selected_use_case.name}-{classifier_alias}-{split_name}"
         manifest_file = settings.data_dir / f"manifests/{run_name}.json"
 
-        split_metadata: dict[str, str | int | float] = {}
         split_metadata_path = resolved_split_dir / f"{split_name}.json"
-        if split_metadata_path.exists():
-            payload = json.loads(split_metadata_path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("strategy") not in (
-                "temporal",
-                "stratified_random",
-            ):
-                raise ValueError(
-                    f"Split metadata '{split_metadata_path}' has an unknown strategy."
-                )
-            actual_strategy = payload["strategy"]
-            if actual_strategy != selected_use_case.split_strategy:
-                raise ValueError(
-                    f"Split metadata '{split_metadata_path}' uses {actual_strategy!r}, "
-                    f"but use case '{use_case}' requires "
-                    f"{selected_use_case.split_strategy!r}."
-                )
-            required = (
-                (
-                    "train_rows",
-                    "test_rows",
-                    "monitoring_rows",
-                    "random_state",
-                    "test_fraction",
-                    "monitoring_fraction",
-                )
-                if actual_strategy == "stratified_random"
-                else (
-                    "train_rows",
-                    "test_rows",
-                    "train_start",
-                    "train_end",
-                    "test_start",
-                    "test_end",
-                )
+        metadata = load_split_metadata(split_metadata_path)
+        if metadata.strategy != selected_use_case.split_strategy:
+            raise ValueError(
+                f"Split metadata '{split_metadata_path}' uses {metadata.strategy!r}, "
+                f"but use case '{use_case}' requires "
+                f"{selected_use_case.split_strategy!r}."
             )
-            if not all(key in payload for key in required):
-                raise ValueError(
-                    f"Split metadata '{split_metadata_path}' is missing required fields."
-                )
-            row_keys = ("train_rows", "test_rows")
-            if actual_strategy == "stratified_random":
-                row_keys += ("monitoring_rows", "random_state")
-            if not all(
-                type(payload[key]) is int and payload[key] >= 0 for key in row_keys
-            ):
-                raise ValueError(
-                    f"Split metadata '{split_metadata_path}' has invalid counts or seed."
-                )
-            if actual_strategy == "stratified_random":
-                fractions = (payload["test_fraction"], payload["monitoring_fraction"])
-                if not all(
-                    type(value) in (int, float) and math.isfinite(value)
-                    for value in fractions
-                ) or not (
-                    fractions[0] > 0 and fractions[1] >= 0 and sum(fractions) < 1
-                ):
-                    raise ValueError(
-                        f"Split metadata '{split_metadata_path}' has invalid fractions."
-                    )
-            else:
-                if not all(
-                    isinstance(payload[key], str) and payload[key]
-                    for key in ("train_start", "train_end", "test_start", "test_end")
-                ):
-                    raise ValueError(
-                        f"Split metadata '{split_metadata_path}' has invalid dates."
-                    )
-            split_metadata = {
-                "split_strategy": actual_strategy,
-                **{"split_" + key: payload[key] for key in required},
-            }
 
         logger.info("Loaded training configuration from '%s'.", config_file_path)
         logger.info(
@@ -258,8 +192,11 @@ def run_training_job(
         fit_df, validation_df = split_threshold_validation(
             train_df, selected_use_case.target_column, config
         )
-        split_metadata["split_fit_rows"] = len(fit_df)
-        split_metadata["split_validation_rows"] = len(validation_df)
+        split_metadata = {
+            **{f"split_{key}": value for key, value in metadata.model_dump().items()},
+            "split_fit_rows": len(fit_df),
+            "split_validation_rows": len(validation_df),
+        }
         logger.info(
             "Reserved %d training rows for threshold validation; fitting on %d rows.",
             len(validation_df),
@@ -307,8 +244,7 @@ def run_training_job(
             ):
                 if env_value := os.environ.get(env_name):
                     mlflow.set_tag(tag_name, env_value)
-            logged_split_metadata = dict(split_metadata)
-            mlflow.log_params(logged_split_metadata)
+            mlflow.log_params(split_metadata)
             logger.info("Logged split metadata to MLflow: %s.", split_metadata)
             model_params_override = None
             if tune_model:
