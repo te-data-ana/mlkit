@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_strings(seq: Sequence[str]) -> Sequence[str]:
-    """Normalize whitespace and camel-case names to lowercase underscores.
+    """Normalize various casing styles to snake case.
 
     Acronym boundaries are retained, such as ``URLLength`` to ``url_length``.
 
@@ -27,7 +27,7 @@ def normalize_strings(seq: Sequence[str]) -> Sequence[str]:
     for name in seq:
         name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name.strip())
         name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
-        normalized.append(re.sub(r"\s+", "_", name).lower())
+        normalized.append(re.sub(r"(\s|-|/|\.|:)+", "_", name).lower())
     return normalized
 
 
