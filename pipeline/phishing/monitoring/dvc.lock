@@ -1,0 +1,185 @@
+schema: '2.0'
+stages:
+  serve_samples:
+    cmd: DATA_DIR=$PWD/data/phishing LOGGING_DIR=$PWD/data/phishing/api_logs
+      LOG_FEATURES=True uv run python -m mlkit.serving.serve_samples --use_case
+      phishing --input_parquet splits/oos-42_monitoring.parquet --model_manifest
+      manifests/phishing-lr-oos-42.json --sample_size 1000 --random_state 42
+      --timestamp 2024-02-01 --drop_columns label
+    deps:
+    - path: data/phishing/manifests/phishing-lr-oos-42.json
+      hash: md5
+      md5: 7a787be7f059b76b2786e60b3d46421c
+      size: 4737
+    - path: data/phishing/splits/oos-42_monitoring.parquet
+      hash: md5
+      md5: 76dfb00a6db06de38a28727e54596030
+      size: 582025
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        model.classifier: lr
+        monitoring.sample_date: '2024-02-01'
+        split.name: oos-42
+        use_case: phishing
+    outs:
+    - path: data/phishing/api_logs
+      hash: md5
+      md5: 7c418262f3446d0a7199515207632d17.dir
+      size: 1313835
+      nfiles: 1
+  ingest_prediction_logs:
+    cmd: DATA_DIR=$PWD/data/phishing LOGGING_DIR=$PWD/data/phishing/api_logs uv
+      run mlkit ingest-prediction-logs --use_case phishing --dataset_name
+      api_predictions
+    deps:
+    - path: data/phishing/api_logs
+      hash: md5
+      md5: 7c418262f3446d0a7199515207632d17.dir
+      size: 1313835
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        monitoring.analysis_dataset: api_predictions
+        use_case: phishing
+    outs:
+    - path: data/phishing/api_predictions
+      hash: md5
+      md5: 905d66aa6c3cb47adf8075ff62bb0bf3.dir
+      size: 107300
+      nfiles: 1
+  ingest_error_logs:
+    cmd: DATA_DIR=$PWD/data/phishing LOGGING_DIR=$PWD/data/phishing/api_logs uv
+      run mlkit ingest-error-logs --use_case phishing --dataset_name api_errors
+    deps:
+    - path: data/phishing/api_logs
+      hash: md5
+      md5: 7c418262f3446d0a7199515207632d17.dir
+      size: 1313835
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit/data
+      hash: md5
+      md5: b741ccec9dd79629652d96271a91f03d.dir
+      size: 41970
+      nfiles: 8
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        monitoring.error_dataset: api_errors
+        use_case: phishing
+    outs:
+    - path: data/phishing/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+  monitor:
+    cmd: DATA_DIR=$PWD/data/phishing uv run mlkit monitor --use_case phishing
+      --reference_dataset predictions/phishing_lr_oos-42 --analysis_dataset
+      api_predictions --error_dataset api_errors --source_reference batch
+      --source_analysis api --model_manifest manifests/phishing-lr-oos-42.json
+      --output_dir data/phishing/monitoring/phishing_lr_oos-42
+      --mlflow_experiment_name phishing-monitoring --run_name phishing_lr_oos-42
+    deps:
+    - path: data/phishing/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: data/phishing/api_predictions
+      hash: md5
+      md5: 905d66aa6c3cb47adf8075ff62bb0bf3.dir
+      size: 107300
+      nfiles: 1
+    - path: data/phishing/manifests/phishing-lr-oos-42.json
+      hash: md5
+      md5: 7a787be7f059b76b2786e60b3d46421c
+      size: 4737
+    - path: data/phishing/predictions/phishing_lr_oos-42
+      hash: md5
+      md5: 34927ac3da2c2dbb794d336dba67ff17.dir
+      size: 609937
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        model.classifier: lr
+        monitoring:
+          sample_date: '2024-02-01'
+          reference_dataset: predictions
+          analysis_dataset: api_predictions
+          error_dataset: api_errors
+          source_reference: batch
+          source_analysis: api
+        split.name: oos-42
+        use_case: phishing
+    outs:
+    - path: data/phishing/monitoring/phishing_lr_oos-42
+      hash: md5
+      md5: 7c74732eb14b71af63472fcdd7607f23.dir
+      size: 614
+      nfiles: 1

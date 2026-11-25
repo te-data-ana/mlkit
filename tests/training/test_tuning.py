@@ -10,7 +10,6 @@ import pytest
 from mlkit.config.schemas import TrainingConfig, TuningConfig
 from mlkit.models import MODEL_CATALOG, create_model
 from mlkit.training import tuning
-from mlkit.training.calibration import make_temporal_cv_splits
 from mlkit.training.tuning import (
     _suggest_parameters,
     optimize_hyperparameters,
@@ -47,56 +46,6 @@ def test_catalog_search_space_suggestions_build_each_model(
 
 
 @pytest.mark.unit
-def test_temporal_cv_splits_keep_equal_timestamps_together(
-    sample_training_df: pd.DataFrame,
-) -> None:
-    train_df = sample_training_df.copy()
-    train_df["churn"] = [0, 1] * 5
-    train_df["reference_date"] = pd.to_datetime(
-        [
-            "2026-01-01",
-            "2026-01-01",
-            "2026-02-01",
-            "2026-02-01",
-            "2026-03-01",
-            "2026-03-01",
-            "2026-04-01",
-            "2026-04-01",
-            "2026-05-01",
-            "2026-05-01",
-        ]
-    )
-
-    folds = make_temporal_cv_splits(
-        train_df,
-        target_column="churn",
-        time_column="reference_date",
-        n_splits=2,
-    )
-
-    for train_indices, validation_indices in folds:
-        train_dates = train_df.iloc[train_indices]["reference_date"]
-        validation_dates = train_df.iloc[validation_indices]["reference_date"]
-        assert train_dates.max() < validation_dates.min()
-        assert set(train_dates).isdisjoint(validation_dates)
-        assert train_df.iloc[train_indices]["churn"].nunique() == 2
-        assert train_df.iloc[validation_indices]["churn"].nunique() == 2
-
-
-@pytest.mark.unit
-def test_temporal_cv_splits_reject_missing_time_column(
-    sample_training_df: pd.DataFrame,
-) -> None:
-    with pytest.raises(ValueError, match="time column 'reference_date' is missing"):
-        make_temporal_cv_splits(
-            df=sample_training_df,
-            target_column="churn",
-            time_column="reference_date",
-            n_splits=2,
-        )
-
-
-@pytest.mark.unit
 def test_optimize_hyperparameters_returns_reproducible_study_result(
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
@@ -105,11 +54,11 @@ def test_optimize_hyperparameters_returns_reproducible_study_result(
     config: TrainingConfig = config_factory(classifier="dt")
     config = replace(
         config,
+        random_state=13,
         tuning=TuningConfig(
             n_trials=2,
             n_splits=2,
             metric="roc_auc",
-            random_state=13,
         ),
     )
     study_optimize = optuna.study.Study.optimize
@@ -163,15 +112,15 @@ def test_optimize_hyperparameters_uses_declared_feature_columns(
     config = config_factory(classifier="dt")
     config = replace(
         config,
+        random_state=13,
         tuning=TuningConfig(
             n_trials=1,
             n_splits=2,
             metric="roc_auc",
-            random_state=13,
         ),
     )
     train_df = temporal_sample_training_df.copy()
-    train_df["customerid"] = range(len(train_df))
+    train_df["customer_id"] = range(len(train_df))
     observed_columns: list[list[str]] = []
 
     class PipelineSpy:
@@ -208,11 +157,11 @@ def test_optimize_hyperparameters_uses_decision_function_for_svm(
     config = config_factory(classifier="lsvc")
     config = replace(
         config,
+        random_state=13,
         tuning=TuningConfig(
             n_trials=1,
             n_splits=2,
             metric="roc_auc",
-            random_state=13,
         ),
     )
     train_df = temporal_sample_training_df.copy()

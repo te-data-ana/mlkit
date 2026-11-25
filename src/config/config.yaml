@@ -1,7 +1,8 @@
+random_state: 26
+
 model:
   classifier: dc
-  classifier_params:
-    random_state: 26
+  classifier_params: {}
 
 preprocessing:
   numeric_impute_strategy: median

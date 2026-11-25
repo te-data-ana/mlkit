@@ -1,26 +1,22 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pandas as pd
 import pytest
 
 from mlkit.data import ingestion
-from mlkit.data.ingestion import (
-    combine_sample_predictions,
-    load_raw_data,
-    normalize_strings,
-)
-from mlkit.use_cases import get_use_case
+from mlkit.data.ingestion import load_raw_data, normalize_strings
 
 
 @pytest.mark.unit
 def test_load_raw_data_returns_clean_indexed_dataframe(generated_training_csv) -> None:
-    df = load_raw_data(generated_training_csv, index_col="customerid")
+    df = load_raw_data(generated_training_csv, index_col="customer_id")
 
     # Verify ingestion returns indexed data, without empty rows and snake-case column names.
     assert isinstance(df, pd.DataFrame)
     assert len(df) > 0
-    assert df.index.name == "customerid"
+    assert df.index.name == "customer_id"
     assert not df.isna().all(axis=1).any()
     assert ~df.columns.str.contains(" ", regex=False).any()
     assert all(col == col.lower() for col in df.columns)
@@ -59,32 +55,29 @@ def test_explicit_data_dir_does_not_read_unrelated_environment(
 
 
 @pytest.mark.unit
-def test_combine_sample_predictions_adds_run_id(tmp_path: Path) -> None:
-    df1 = pd.DataFrame({"prediction": [0, 1]})
-    df2 = pd.DataFrame({"prediction": [1]})
-
-    df1.to_csv(
-        tmp_path / "0001_sample_predictions.csv",
-        index=False,
-    )
-    df2.to_csv(
-        tmp_path / "0042_sample_predictions.csv",
-        index=False,
-    )
-
-    result = combine_sample_predictions(tmp_path)
-
-    assert len(result) == 3
-    assert "run_id" in result.columns
-    assert set(result["run_id"]) == {"0001", "0042"}
-
-
-@pytest.mark.unit
 def test_normalize_strings_strips_and_normalizes_column_names() -> None:
-    assert normalize_strings([" Customer ID ", "Subscription Type"]) == [
+    names = [
+        " Customer ID ",
+        "Subscription\t  Type",
+        "IsDomainIP",
+        "URLLength",
+        "NoOfURLRedirect",
+        "version2Value",
+        "URL",
+        "already_snake_case",
+    ]
+    expected = [
         "customer_id",
         "subscription_type",
+        "is_domain_ip",
+        "url_length",
+        "no_of_url_redirect",
+        "version2_value",
+        "url",
+        "already_snake_case",
     ]
+    assert normalize_strings(names) == expected
+    assert normalize_strings(expected) == expected
 
 
 @pytest.mark.unit
@@ -99,14 +92,14 @@ def test_ingest_jsonl_log_writes_nonempty_records(
         observed["source"] = path
         return df
 
-    def fake_write_partitioned_dataset(**kwargs: object) -> None:
+    def fake_write_parquet_dataset(**kwargs: object) -> None:
         observed["write"] = kwargs
 
     monkeypatch.setattr(ingestion, "read_jsonl_log", fake_read_jsonl_log)
     monkeypatch.setattr(
         ingestion,
-        "write_partitioned_dataset",
-        fake_write_partitioned_dataset,
+        "write_parquet_dataset",
+        fake_write_parquet_dataset,
     )
     log_path = tmp_path / "predictions.jsonl"
 
@@ -126,20 +119,22 @@ def test_ingest_jsonl_log_writes_nonempty_records(
 
 
 @pytest.mark.unit
-def test_ingest_jsonl_log_skips_empty_logs(
+def test_ingest_jsonl_log_writes_empty_logs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    writes: list[dict[str, object]] = []
+    empty_df = pd.DataFrame()
+    read_jsonl_log = Mock(return_value=empty_df)
     monkeypatch.setattr(
         ingestion,
         "read_jsonl_log",
-        lambda _: pd.DataFrame(),
+        read_jsonl_log,
     )
+    write_parquet_dataset = Mock()
     monkeypatch.setattr(
         ingestion,
-        "write_partitioned_dataset",
-        lambda **kwargs: writes.append(kwargs),
+        "write_parquet_dataset",
+        write_parquet_dataset,
     )
 
     ingestion.ingest_jsonl_log(
@@ -148,7 +143,13 @@ def test_ingest_jsonl_log_skips_empty_logs(
         jsonl_path=tmp_path / "empty.jsonl",
     )
 
-    assert writes == []
+    write_parquet_dataset.assert_called_once_with(
+        df=empty_df,
+        dataset_name="predictions",
+        timestamp_column="reference_date",
+        overwrite_partitions=True,
+        settings=None,
+    )
 
 
 @pytest.mark.unit
@@ -200,48 +201,3 @@ def test_log_ingestion_wrappers_use_configured_paths(
         "jsonl_path": getattr(settings, log_path_attribute),
         "settings": settings,
     }
-
-
-@pytest.mark.unit
-def test_ingest_sample_data_validates_and_writes_dataset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sample_data = pd.DataFrame({"reference_date": ["2026-01-01"]})
-    validated_data = pd.DataFrame({"reference_date": [pd.Timestamp("2026-01-01")]})
-    observed: dict[str, object] = {}
-    monkeypatch.setattr(
-        ingestion,
-        "combine_sample_predictions",
-        lambda **kwargs: sample_data,
-    )
-
-    def fake_validate_data(df: pd.DataFrame, use_case: object) -> pd.DataFrame:
-        observed["validated_input"] = df
-        observed["use_case"] = use_case
-        return validated_data
-
-    def fake_write_partitioned_dataset(**kwargs: object) -> None:
-        observed["write"] = kwargs
-
-    monkeypatch.setattr(ingestion, "validate_data", fake_validate_data)
-    monkeypatch.setattr(
-        ingestion,
-        "write_partitioned_dataset",
-        fake_write_partitioned_dataset,
-    )
-
-    use_case = get_use_case("churn")
-    ingestion.ingest_sample_data(
-        dataset_name="samples",
-        timestamp_column="reference_date",
-        use_case=use_case,
-    )
-
-    assert observed["validated_input"] is sample_data
-    assert observed["use_case"] is use_case
-    write_args = observed["write"]
-    assert isinstance(write_args, dict)
-    assert write_args["df"] is validated_data
-    assert write_args["dataset_name"] == "samples"
-    assert write_args["timestamp_column"] == "reference_date"
-    assert write_args["overwrite_partitions"] is True

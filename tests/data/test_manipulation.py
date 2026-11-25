@@ -40,6 +40,10 @@ def test_main_passes_cli_config_to_preprocess_raw_data(
             "2026-06-01",
             "--use_case",
             "churn",
+            "--random_state",
+            "19",
+            "--preparation_random_state",
+            "7",
         ],
     )
 
@@ -51,6 +55,7 @@ def test_main_passes_cli_config_to_preprocess_raw_data(
         start_date="2026-01-01",
         end_date="2026-06-01",
         use_case=get_use_case("churn"),
+        random_state=7,
     )
 
 
@@ -107,6 +112,7 @@ def test_preprocess_raw_data_creates_output_file(
     result = pd.read_csv(output_path)
 
     assert "reference_date" in result.columns
+    assert result["customer_id"].tolist() == list(range(1001, 1013))
 
 
 @pytest.mark.unit

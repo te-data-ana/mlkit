@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -6,15 +7,28 @@ import pandas as pd
 
 from mlkit.config import RuntimeSettings
 from mlkit.data.jsonl_logs import read_jsonl_log
-from mlkit.data.storage import write_partitioned_dataset
-from mlkit.data.validation import validate_data
-from mlkit.use_cases import UseCase
+from mlkit.data.storage import write_parquet_dataset
 
 logger = logging.getLogger(__name__)
 
 
 def normalize_strings(seq: Sequence[str]) -> Sequence[str]:
-    return [s.strip().lower().replace(" ", "_") for s in seq]
+    """Normalize whitespace and camel-case names to lowercase underscores.
+
+    Acronym boundaries are retained, such as ``URLLength`` to ``url_length``.
+
+    Args:
+        seq: Column names to normalize.
+
+    Returns:
+        Normalized names in their original order.
+    """
+    normalized = []
+    for name in seq:
+        name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name.strip())
+        name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+        normalized.append(re.sub(r"\s+", "_", name).lower())
+    return normalized
 
 
 def load_raw_data(
@@ -81,76 +95,6 @@ def load_raw_data(
         raise
 
 
-def combine_sample_predictions(
-    data_dir: Path | None = None, *, settings: RuntimeSettings | None = None
-) -> pd.DataFrame:
-    """Combine sample prediction files into a single DataFrame.
-
-    Reads all CSV files matching the pattern
-    ``dddd_sample_predictions.csv`` from the specified directory,
-    adds a ``run_id`` column derived from the four-digit filename
-    prefix, and concatenates the files into a single DataFrame.
-
-    Args:
-        data_dir: Directory containing sample prediction CSV files. If
-            not provided, the default output data directory from the
-            runtime settings is used.
-        settings: Runtime snapshot used when no data directory is supplied.
-
-    Returns:
-        A DataFrame containing the combined prediction records from all
-        matching files, including a ``run_id`` column identifying the
-        source file of each record.
-    """
-    resolved_data_dir = (
-        data_dir if data_dir is not None else (settings or RuntimeSettings()).output_dir
-    )
-
-    dfs = []
-
-    for path in resolved_data_dir.glob("[0-9][0-9][0-9][0-9]_sample_predictions.csv"):
-        df = pd.read_csv(path)
-        df["run_id"] = path.stem[:4]
-        dfs.append(df)
-
-    if not dfs:
-        return pd.DataFrame()
-
-    return pd.concat(dfs, ignore_index=True)
-
-
-def ingest_sample_data(
-    dataset_name: str,
-    timestamp_column: str,
-    use_case: UseCase,
-    *,
-    settings: RuntimeSettings | None = None,
-) -> None:
-    """
-    Combine sample prediction files, validate the resulting data,
-    and append it as a partitioned Parquet dataset.
-
-    Args:
-        dataset_name:
-            Name of the target dataset directory.
-        timestamp_column:
-            Name of the timestamp column used for partitioning.
-        use_case: Data contract to validate before writing.
-        settings: Runtime snapshot used for input and output locations.
-    """
-    settings = settings or RuntimeSettings()
-    df = combine_sample_predictions(settings=settings)
-    df = validate_data(df=df, use_case=use_case)
-
-    write_partitioned_dataset(
-        df=df,
-        dataset_name=dataset_name,
-        timestamp_column=timestamp_column,
-        overwrite_partitions=True,
-        settings=settings,
-    )
-
-
 def ingest_jsonl_log(
     dataset_name: str,
     timestamp_column: str,
@@ -182,13 +126,12 @@ def ingest_jsonl_log(
     df = read_jsonl_log(jsonl_path)
 
     if df.empty:
-        logger.info(
-            "No valid records found in %s. Skipping ingestion.",
+        logger.warning(
+            "No valid records found in %s.",
             jsonl_path,
         )
-        return
 
-    write_partitioned_dataset(
+    write_parquet_dataset(
         df=df,
         dataset_name=dataset_name,
         timestamp_column=timestamp_column,

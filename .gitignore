@@ -33,11 +33,14 @@ dist/
 *.egg-info/
 
 # Data
-data/experiment_runs/
-data/monitoring/
-data/partitioned/
-data/predictions/
-data/splits/
+data/*/api_errors/
+data/*/api_logs/
+data/*/api_predictions/
+data/*/manifests/
+data/*/monitoring/
+data/*/partitioned/
+data/*/predictions/
+data/*/splits/
 *.csv
 *.json
 *.parquet
@@ -50,6 +53,7 @@ tracking/mlflow.db
 tracking_local/mlflow.db
 
 # Logs
+api_logs/
 logs/
 logs_local/
 

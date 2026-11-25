@@ -1,7 +1,8 @@
+random_state: 26
+
 model:
   classifier: rf
-  classifier_params:
-    random_state: 26
+  classifier_params: {}
 
 preprocessing:
   numeric_impute_strategy: median
@@ -11,7 +12,6 @@ tuning:
   n_trials: 64
   n_splits: 4
   metric: roc_auc
-  random_state: 26
 
 calibration:
   n_splits: 3

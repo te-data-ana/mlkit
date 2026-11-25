@@ -1,90 +1,118 @@
+vars:
+  - ../churn.yaml
+
 stages:
   add_reference_dates:
+    wdir: ../..
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run python -m mlkit.data.manipulation
       --use_case ${use_case}
       --input_csv customer_churn_dataset-training.csv
       --output_csv training.csv
       --start_date 2023-01-01
       --end_date 2025-12-01
+      --random_state ${random_state}
+      --preparation_random_state ${seeds.preparation}
     deps:
-      - data/raw/customer_churn_dataset-training.csv
+      - data/${use_case}/raw/customer_churn_dataset-training.csv
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
+          - random_state
+          - seeds.preparation
     outs:
-      - data/raw/training.csv
+      - data/${use_case}/raw/training.csv
   add_inference_reference_dates:
+    wdir: ../..
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run python -m mlkit.data.manipulation
       --use_case ${use_case}
       --input_csv customer_churn_dataset-inference.csv
       --output_csv inference.csv
       --start_date 2026-01-01
       --end_date 2026-06-01
+      --random_state ${random_state}
+      --preparation_random_state ${seeds.preparation}
     deps:
-      - data/raw/customer_churn_dataset-inference.csv
+      - data/${use_case}/raw/customer_churn_dataset-inference.csv
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
+          - random_state
+          - seeds.preparation
     outs:
-      - data/raw/inference.csv
+      - data/${use_case}/raw/inference.csv
   prepare_partitioned_data:
+    wdir: ../..
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit prepare-data
       --use_case ${use_case}
       --input_csv training.csv &&
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit prepare-data
       --use_case ${use_case}
       --input_csv inference.csv
     deps:
-      - data/raw/training.csv
-      - data/raw/inference.csv
+      - data/${use_case}/raw/training.csv
+      - data/${use_case}/raw/inference.csv
       - src/mlkit/config
       - src/mlkit/data
       - src/mlkit/use_cases
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
+      - pipeline/churn.yaml:
+          - use_case
     outs:
-      - data/partitioned
-  create_oot_split:
+      - data/${use_case}/partitioned
+  create_split:
+    wdir: ../..
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit create-split
       --use_case ${use_case}
       --dataset_name partitioned
       --start_date ${split.start_date}
-      --split_date ${split.split_date}
       --end_date ${split.end_date}
+      --validation_fraction ${split.validation_fraction}
+      --test_fraction ${split.test_fraction}
+      --monitoring_fraction ${split.monitoring_fraction}
       --split_name ${split.name}
     deps:
-      - data/partitioned
-      - src/mlkit/config
-      - src/mlkit/data
-      - src/mlkit/use_cases
+      - data/${use_case}/partitioned
+      - use_cases/src/use_cases/${use_case}
+      - src/mlkit
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - split
+      - pipeline/churn.yaml:
+          - use_case
+          - split
     outs:
-      - data/splits/${split.name}_test.parquet
-      - data/splits/${split.name}_train.parquet
-      - data/splits/${split.name}.json
+      - data/${use_case}/splits
   train_model:
+    wdir: ../..
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit train
       --use_case ${use_case}
       --config ${model.classifier}.yaml
+      --random_state ${random_state}
+      --training_random_state ${seeds.training}
+      --classifier_random_state ${seeds.classifier}
       --split_name ${split.name}
       --calibration_method ${calibration.method}
       --n_jobs ${training.n_jobs}
@@ -92,42 +120,47 @@ stages:
       --register-model ${model.register_model}
       --promote-model ${model.promote_model}
     deps:
-      - data/splits/${split.name}_test.parquet
-      - data/splits/${split.name}_train.parquet
-      - data/splits/${split.name}.json
+      - data/${use_case}/splits
       - src/mlkit
+      - use_cases/src/use_cases/${use_case}
       - src/config/${model.classifier}.yaml
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - model.classifier
-      - split.name
-      - calibration.method
-      - training.n_jobs
-      - training.tune_model
-      - model.register_model
-      - model.promote_model
+      - pipeline/churn.yaml:
+          - use_case
+          - model
+          - split.name
+          - calibration.method
+          - training.n_jobs
+          - training.tune_model
+          - random_state
+          - seeds.training
+          - seeds.classifier
     outs:
-      - data/manifests:
+      - data/${use_case}/manifests:
           persist: true
-  batch_predict_oot:
+  batch_predict:
+    wdir: ../..
     cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
       uv run mlkit batch-predict
       --use_case ${use_case}
       --input_dataset splits/${split.name}_test.parquet
       --output_dataset predictions/${use_case}_${model.classifier}_${split.name}
       --model_manifest manifests/${use_case}-${model.classifier}-${split.name}.json
     deps:
-      - data/splits/${split.name}_test.parquet
-      - data/manifests/${use_case}-${model.classifier}-${split.name}.json
+      - data/${use_case}/splits/${split.name}_test.parquet
+      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
       - src/mlkit
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:
-      - use_case
-      - model.classifier
-      - split.name
+      - pipeline/churn.yaml:
+          - use_case
+          - model.classifier
+          - split.name
     outs:
-      - data/predictions:
+      - data/${use_case}/predictions:
           persist: true

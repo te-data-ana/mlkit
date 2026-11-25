@@ -149,32 +149,6 @@ class ModelRegistry:
             name=model_name, version=str(model_version), description=description
         )
 
-    def get_metric_by_alias(
-        self, model_name: str, model_alias: str, metric_name: str
-    ) -> float:
-        """Retrieve a metric from the run associated with an alias.
-
-        Args:
-            model_name: Registered model name.
-            model_alias: Alias identifying the model version and run.
-            metric_name: Name of the logged metric.
-
-        Returns:
-            Logged metric value.
-        """
-        version = self.get_model_version_by_alias(
-            model_name=model_name,
-            model_alias=model_alias,
-        )
-        run = self.client.get_run(run_id=version.run_id)
-        logger.info(
-            "Fetched metric '%s' for model '%s' alias '%s'.",
-            metric_name,
-            model_name,
-            model_alias,
-        )
-        return run.data.metrics[metric_name]
-
     def get_metrics_by_alias(
         self, model_name: str, model_alias: str
     ) -> dict[str, float]:
@@ -252,7 +226,7 @@ class ModelRegistry:
         run = self.client.get_run(run_id=run_id)
         self._ensure_run_use_case(
             run_id=run_id,
-            recorded_use_case=run.data.params.get("use_case"),
+            recorded_use_case=run.data.tags.get("use_case_name"),
             expected_use_case=expected_use_case,
         )
 
@@ -295,7 +269,7 @@ class ModelRegistry:
         run = self.client.get_run(run_id=model_version_object.run_id)
         self._ensure_run_use_case(
             run_id=model_version_object.run_id,
-            recorded_use_case=run.data.params.get("use_case"),
+            recorded_use_case=run.data.tags.get("use_case_name"),
             expected_use_case=expected_use_case,
         )
         model = self.load_model_by_version(

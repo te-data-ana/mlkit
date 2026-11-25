@@ -96,10 +96,9 @@ def evaluate_model(
         n_bins=calibration_bins,
         strategy="uniform",
     )
-    bin_counts = np.histogram(
-        y_prob,
-        bins=np.linspace(0.0, 1.0, calibration_bins + 1),
-    )[0]
+    bin_edges = np.linspace(0.0, 1.0, calibration_bins + 1)
+    bin_indices = np.searchsorted(bin_edges[1:-1], y_prob)
+    bin_counts = np.bincount(bin_indices, minlength=calibration_bins)
     nonempty_counts = bin_counts[bin_counts > 0]
     calibration_error = float(
         np.average(

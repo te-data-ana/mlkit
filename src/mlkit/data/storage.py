@@ -1,9 +1,8 @@
 """
-Utilities for storing and retrieving partitioned Parquet datasets.
+Utilities for storing and retrieving Parquet datasets.
 
-Datasets are partitioned by year and month to enable efficient
-time-range queries for model training, evaluation, monitoring,
-and retraining workflows.
+Timestamped datasets are partitioned by year and month to enable efficient
+time-range queries; timestamp-free datasets use unpartitioned Parquet.
 """
 
 import shutil
@@ -15,20 +14,19 @@ from mlkit.config import RuntimeSettings
 type PartitionFilter = list[list[tuple[str, str, int]]]
 
 
-def write_partitioned_dataset(
+def write_parquet_dataset(
     df: pd.DataFrame,
     dataset_name: str,
-    timestamp_column: str,
+    timestamp_column: str | None = None,
     overwrite_partitions: bool = False,
     *,
     settings: RuntimeSettings | None = None,
 ) -> None:
     """
-    Write a DataFrame as a year/month partitioned Parquet dataset.
+    Write a timestamp-partitioned or unpartitioned Parquet dataset.
 
-    The timestamp column is converted to datetime if necessary and used
-    to derive ``year`` and ``month`` partition columns. The dataset is
-    written to ``data/{dataset_name}`` using Hive-style partitioning.
+    When supplied, the timestamp column is converted to datetime and used
+    to derive ``year`` and ``month`` Hive-style partition columns.
 
     If ``overwrite_partitions`` is ``True``, existing partitions whose
     year/month combinations are present in the input DataFrame are
@@ -37,25 +35,42 @@ def write_partitioned_dataset(
 
     Args:
         df:
-            DataFrame to persist. If the input DataFrame is empty, no
-            output is written.
+            DataFrame to persist. Empty timestamped data creates an empty
+            directory; empty timestamp-free data retains its Parquet schema.
 
         dataset_name:
             Name of the output dataset directory.
 
         timestamp_column:
             Name of the timestamp column used to derive partition keys.
-            Note that the column must be convertible to datetime via
-            ``pd.to_datetime``.
+            The column must be convertible to datetime via ``pd.to_datetime``.
+            If None, write a single Parquet file in the dataset directory,
+            replacing a previous timestamp-free output.
 
         overwrite_partitions:
             Whether to replace existing year/month partitions before
-            writing new data. Defaults to ``True``.
+            writing new data. Defaults to ``False``.
         settings: Runtime snapshot used to locate the dataset.
 
     Returns:
         None.
+
+    Raises:
+        ValueError: If the existing dataset has an incompatible layout.
     """
+
+    settings = settings or RuntimeSettings()
+    dataset_dir = settings.data_dir / dataset_name
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    unpartitioned_file = dataset_dir / "data.parquet"
+    if timestamp_column is None:
+        if any(path != unpartitioned_file for path in dataset_dir.iterdir()):
+            raise ValueError(f"Dataset has an incompatible layout: {dataset_dir}")
+        df.to_parquet(unpartitioned_file, index=False)
+        return
+    if unpartitioned_file.exists():
+        raise ValueError(f"Dataset has an incompatible layout: {dataset_dir}")
 
     if df.empty:
         return
@@ -66,10 +81,6 @@ def write_partitioned_dataset(
 
     df["year"] = df[timestamp_column].dt.year
     df["month"] = df[timestamp_column].dt.month
-
-    settings = settings or RuntimeSettings()
-    dataset_dir = settings.data_dir / dataset_name
-    dataset_dir.mkdir(parents=True, exist_ok=True)
 
     if overwrite_partitions:
         year_month_comb = df[["year", "month"]].drop_duplicates().values
@@ -132,16 +143,17 @@ def _partition_filters(
     return filters
 
 
-def read_partitioned_dataset(
+def read_parquet_dataset(
     dataset_name: str,
-    timestamp_column: str,
+    timestamp_column: str | None = None,
     start: str | pd.Timestamp | None = None,
     end: str | pd.Timestamp | None = None,
     *,
     settings: RuntimeSettings | None = None,
+    require_valid_timestamps: bool = False,
 ) -> pd.DataFrame:
     """
-    Read rows from a partitioned Parquet dataset.
+    Read rows from a Parquet file or dataset.
 
     When ``start`` and ``end`` are provided, the function first applies
     year/month partition pruning to limit the number of Parquet files read
@@ -150,15 +162,17 @@ def read_partitioned_dataset(
     treated as exact inclusive bounds.
 
     When both ``start`` and ``end`` are ``None``, the entire dataset is
-    loaded without partition pruning or timestamp filtering.
+    loaded without partition pruning or timestamp filtering. When
+    ``require_valid_timestamps`` is true, the timestamp column is read from
+    the entire dataset before applying an optional date filter.
 
     Args:
         dataset_name:
             Name of the partitioned dataset directory.
 
         timestamp_column:
-            Name of the timestamp column used for filtering when a date
-            range is specified.
+            Name of the timestamp column used for datetime conversion and
+            filtering. If None, read without timestamp conversion or filtering.
 
         start:
             Inclusive start date of the requested time window. Must be
@@ -172,6 +186,8 @@ def read_partitioned_dataset(
             together with ``start``. If both ``start`` and ``end`` are
             ``None``, the entire dataset is loaded. Defaults to ``None``.
         settings: Runtime snapshot used to locate the dataset.
+        require_valid_timestamps: Reject missing or invalid timestamps before
+            filtering, including those outside the selected partitions.
 
     Returns:
         A DataFrame containing either:
@@ -185,7 +201,8 @@ def read_partitioned_dataset(
 
         ValueError:
             If only one of ``start`` or ``end`` is provided, or if
-            ``start`` is later than ``end``.
+            ``start`` is later than ``end``, or if dates are supplied
+            without a timestamp column.
     """
 
     settings = settings or RuntimeSettings()
@@ -195,8 +212,20 @@ def read_partitioned_dataset(
         msg = f"Dataset does not exist: {dataset_dir}"
         raise FileNotFoundError(msg)
 
+    if timestamp_column is None:
+        if start is not None or end is not None or require_valid_timestamps:
+            raise ValueError("Date bounds require a timestamp column.")
+        return pd.read_parquet(dataset_dir).reset_index(drop=True)
+
+    if require_valid_timestamps:
+        timestamps = pd.read_parquet(dataset_dir, columns=[timestamp_column])
+        if pd.to_datetime(timestamps[timestamp_column], errors="coerce").isna().any():
+            raise ValueError("Dataset timestamps must be valid and non-missing.")
+
     if start is None and end is None:
         df = pd.read_parquet(dataset_dir)
+        if df.empty:
+            df[timestamp_column] = []
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
 
     else:
@@ -215,7 +244,8 @@ def read_partitioned_dataset(
         partition_filters = _partition_filters(start, end)
 
         df = pd.read_parquet(dataset_dir, filters=partition_filters)
-
+        if df.empty:
+            df[timestamp_column] = []
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
 
         date_filter = df[timestamp_column].between(start, end, inclusive="both")

@@ -34,17 +34,3 @@ def read_jsonl_log(jsonl_path: Path) -> pd.DataFrame:
         [df.drop(columns=["features"]), features],
         axis=1,
     )
-
-
-def jsonl_log_to_csv(jsonl_path: Path, csv_path: Path) -> None:
-    """Convert a prediction log from JSONL to CSV format.
-
-    Flattens the nested ``features`` object into separate columns and
-    writes the transformed records to a CSV file.
-
-    Args:
-        jsonl_path: Path to the source JSONL prediction log.
-        csv_path: Path where the CSV file will be written.
-    """
-    df = read_jsonl_log(jsonl_path)
-    df.to_csv(csv_path, index=False)

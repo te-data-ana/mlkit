@@ -16,7 +16,8 @@ import requests
 
 from mlkit import _parse_port
 from mlkit.config import ServingSettings, configure_logging
-from mlkit.data.ingestion import load_raw_data
+from mlkit.config.seeds import parse_seed, parse_seed_override, resolve_seed
+from mlkit.data.ingestion import load_raw_data, normalize_strings
 from mlkit.data.validation import validate_data
 from mlkit.use_cases import UseCase, get_use_case
 
@@ -26,10 +27,11 @@ API_HEALTH_CHECK_INTERVAL_SECONDS = 1
 
 def load_sample_data(
     use_case: UseCase,
-    input_csv: str,
-    sample_size: int,
-    random_state: int,
     settings: ServingSettings,
+    input_csv: str | None = None,
+    input_parquet: str | None = None,
+    sample_size: int = 100,
+    random_state: int = 42,
     drop_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """Load, validate, and sample inference data.
@@ -39,22 +41,35 @@ def load_sample_data(
 
     Args:
         use_case: Explicit data contract for the sample features.
-        input_csv: Name of the CSV file in the raw data directory.
+        settings: Runtime configuration containing data locations.
+        input_csv: Name of the CSV file in the raw data directory, if used.
+        input_parquet: Parquet file path relative to the data directory, if used.
         sample_size: Number of records to sample.
         random_state: Seed used for reproducible sampling.
-        settings: Runtime configuration containing data locations.
         drop_columns: Optional list of column names to drop from loaded data.
 
     Returns:
         A validated DataFrame containing the sampled inference records.
     """
 
-    df = load_raw_data(
-        file_name=input_csv,
-        index_col=use_case.index_column,
-        data_dir=settings.data_dir / "raw",
-        drop_columns=drop_columns,
-    )
+    if input_csv is not None and input_parquet is None:
+        df = load_raw_data(
+            file_name=input_csv,
+            index_col=use_case.index_column,
+            data_dir=settings.data_dir / "raw",
+            drop_columns=drop_columns,
+        )
+    elif input_parquet is not None and input_csv is None:
+        df = pd.read_parquet(settings.data_dir / input_parquet)
+        df.columns = normalize_strings(df.columns)
+        df = df.convert_dtypes()
+        if drop_columns:
+            df = df.drop(columns=normalize_strings(drop_columns), errors="ignore")
+        if use_case.index_column:
+            df = df.set_index(use_case.index_column)
+        df = df.dropna(how="all")
+    else:
+        raise ValueError("Provide exactly one of input_csv or input_parquet.")
 
     df = validate_data(df=df, use_case=use_case)
 
@@ -82,7 +97,7 @@ def predict_samples(
         settings: Runtime configuration containing API connection
             details.
         timestamp: Optional timestamp to use for all prediction requests. If
-            not provided, the use-case time column in `df` is used when present.
+            not provided, the use-case event time column in `df` is used when present.
 
     Returns:
         A DataFrame containing the original input features together with
@@ -104,7 +119,7 @@ def predict_samples(
         if index % 100 == 0:
             logger.info("Processed %s/%s samples", index, len(df))
         features = row.to_dict()
-        row_timestamp = features.pop(use_case.time_column, None)
+        row_timestamp = features.pop(use_case.event_time_column, None)
 
         effective_timestamp = timestamp if timestamp is not None else row_timestamp
 
@@ -120,7 +135,7 @@ def predict_samples(
 
     return pd.concat(
         [
-            df.drop(columns=[use_case.time_column], errors="ignore"),
+            df.drop(columns=[use_case.event_time_column], errors="ignore"),
             pd.DataFrame(predictions, index=df.index),
         ],
         axis=1,
@@ -161,11 +176,12 @@ def save_predictions(
 
 def serve_samples(
     use_case: UseCase,
-    input_csv: str,
+    input_csv: str | None,
+    input_parquet: str | None,
+    *,
     sample_size: int,
     random_state: int,
     settings: ServingSettings | None = None,
-    *,
     timestamp: datetime | None = None,
     drop_columns: list[str] | None = None,
 ) -> Path:
@@ -177,7 +193,8 @@ def serve_samples(
 
     Args:
         use_case: Explicit data contract used for loading and inference.
-        input_csv: Name of the CSV file in the raw data directory.
+        input_csv: Name of the CSV file in the raw data directory, if used.
+        input_parquet: Parquet file path relative to the data directory, if used.
         sample_size: Number of records to sample and score.
         random_state: Seed used for reproducible sampling and run
             identification.
@@ -199,10 +216,11 @@ def serve_samples(
 
     df_sample = load_sample_data(
         use_case=use_case,
+        settings=settings,
         input_csv=input_csv,
+        input_parquet=input_parquet,
         sample_size=sample_size,
         random_state=random_state,
-        settings=settings,
         drop_columns=drop_columns,
     )
 
@@ -312,11 +330,16 @@ def custom_parser(settings: ServingSettings | None = None) -> argparse.ArgumentP
         default=None,
         help="Path of model manifest in configured data directory.",
     )
-    parser.add_argument(
+    sample_input = parser.add_mutually_exclusive_group(required=True)
+    sample_input.add_argument(
         "--input_csv",
-        required=True,
         type=str,
         help="Name of the CSV file in the raw data directory to sample from.",
+    )
+    sample_input.add_argument(
+        "--input_parquet",
+        type=str,
+        help="Parquet file relative to the data directory to sample from.",
     )
     parser.add_argument(
         "--sample_size",
@@ -327,8 +350,13 @@ def custom_parser(settings: ServingSettings | None = None) -> argparse.ArgumentP
     parser.add_argument(
         "--random_state",
         required=False,
-        type=int,
+        type=parse_seed,
         help="Random seed to allow reproducible sample draws.",
+    )
+    parser.add_argument(
+        "--monitoring_random_state",
+        type=parse_seed_override,
+        help="Sample seed override, or 'inherit' to use the root seed.",
     )
     parser.add_argument(
         "--timestamp",
@@ -424,7 +452,10 @@ def main() -> None:
     configure_model_environment(args=args, settings=settings)
     os.environ["USE_CASE"] = args.use_case
 
-    random_state = int(args.random_state or random.randint(1, 1000))
+    random_state = resolve_seed(
+        args.random_state if args.random_state is not None else random.randint(1, 1000),
+        args.monitoring_random_state,
+    )
 
     api_process = start_api_server(
         host=args.host,
@@ -440,6 +471,7 @@ def main() -> None:
         serve_samples(
             use_case=get_use_case(args.use_case),
             input_csv=args.input_csv,
+            input_parquet=args.input_parquet,
             sample_size=args.sample_size,
             random_state=random_state,
             settings=settings,

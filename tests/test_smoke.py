@@ -40,6 +40,12 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
             "alternate",
             "--config",
             "config.yaml",
+            "--random_state",
+            "19",
+            "--training_random_state",
+            "inherit",
+            "--classifier_random_state",
+            "0",
         ]
     )
 
@@ -53,6 +59,9 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
         "register_model": False,
         "promote_model": False,
         "settings": ANY,
+        "random_state": 19,
+        "training_random_state": None,
+        "classifier_random_state": 0,
     }
 
 
@@ -121,7 +130,7 @@ def test_package_main_builds_report_from_partitioned_datasets(
     from mlkit import data
     from mlkit.monitoring import core
 
-    use_case = SimpleNamespace(time_column="event_date")
+    use_case = SimpleNamespace(time_column="event_date", event_time_column="event_date")
     datasets = {
         "partitioned": object(),
         "api_predictions": object(),
@@ -130,7 +139,7 @@ def test_package_main_builds_report_from_partitioned_datasets(
     loaded: list[tuple[str, str]] = []
     observed: dict[str, object] = {}
 
-    def fake_read_partitioned_dataset(
+    def fake_read_parquet_dataset(
         dataset_name: str, timestamp_column: str, *, settings: object
     ) -> object:
         loaded.append((dataset_name, timestamp_column))
@@ -139,7 +148,7 @@ def test_package_main_builds_report_from_partitioned_datasets(
     def fake_build_monitoring_report(**kwargs: object) -> None:
         observed.update(kwargs)
 
-    monkeypatch.setattr(data, "read_partitioned_dataset", fake_read_partitioned_dataset)
+    monkeypatch.setattr(data, "read_parquet_dataset", fake_read_parquet_dataset)
     monkeypatch.setattr(core, "build_monitoring_report", fake_build_monitoring_report)
     monkeypatch.setattr(
         "mlkit.use_cases.get_use_case",
@@ -203,12 +212,12 @@ def test_package_main_uses_monitoring_model_manifest(
 
     monkeypatch.setattr(mlkit, "RuntimeSettings", lambda: settings)
 
-    def fake_read_partitioned_dataset(
+    def fake_read_parquet_dataset(
         dataset_name: str, timestamp_column: str, *, settings: object
     ) -> object:
         return datasets[dataset_name]
 
-    monkeypatch.setattr(data, "read_partitioned_dataset", fake_read_partitioned_dataset)
+    monkeypatch.setattr(data, "read_parquet_dataset", fake_read_parquet_dataset)
     manifest_read = Mock(return_value=manifest)
     monkeypatch.setattr(TrainingManifest, "read", manifest_read)
 
@@ -499,15 +508,15 @@ def test_package_main_dispatches_prepare_data(
         observed["use_case"] = use_case
         return validated_data
 
-    def fake_write_partitioned_dataset(**kwargs: object) -> None:
+    def fake_write_parquet_dataset(**kwargs: object) -> None:
         observed["write"] = kwargs
 
     monkeypatch.setattr(data, "load_raw_data", fake_load_raw_data)
     monkeypatch.setattr(data, "validate_data", fake_validate_data)
     monkeypatch.setattr(
         storage,
-        "write_partitioned_dataset",
-        fake_write_partitioned_dataset,
+        "write_parquet_dataset",
+        fake_write_parquet_dataset,
     )
 
     mlkit.main(["prepare-data", "--input_csv", "training.csv", "--use_case", "churn"])
@@ -534,19 +543,20 @@ def test_package_main_dispatches_create_split(
     import mlkit
     from mlkit.data import splitting
 
-    use_case = SimpleNamespace(time_column="event_date")
+    use_case = SimpleNamespace(time_column="event_date", split_strategy="temporal")
     observed: dict[str, object] = {}
 
-    def fake_create_time_based_split(**kwargs: object) -> dict[str, int]:
+    def fake_create_split(use_case: object, **kwargs: object) -> dict[str, str]:
+        observed["use_case"] = use_case
         observed.update(kwargs)
-        return
+        return {"strategy": "temporal"}
 
     settings = SimpleNamespace(data_dir=tmp_path)
     monkeypatch.setattr(mlkit, "RuntimeSettings", lambda: settings)
     monkeypatch.setattr(
         splitting,
-        "create_time_based_split",
-        fake_create_time_based_split,
+        "create_split",
+        fake_create_split,
     )
     monkeypatch.setattr(
         "mlkit.use_cases.get_use_case",
@@ -562,24 +572,94 @@ def test_package_main_dispatches_create_split(
             "alternate",
             "--start_date",
             "2026-01-01",
-            "--split_date",
-            "2026-04-01",
             "--end_date",
             "2026-06-30",
             "--split_name",
             "pytest",
+            "--random_state",
+            "19",
+            "--split_random_state",
+            "7",
         ]
     )
 
     assert observed == {
+        "use_case": use_case,
         "dataset_name": "partitioned",
-        "timestamp_column": "event_date",
+        "input_parquet": None,
         "start_date": "2026-01-01",
-        "split_date": "2026-04-01",
         "end_date": "2026-06-30",
         "split_name": "pytest",
+        "random_state": 7,
+        "validation_fraction": 0.1,
+        "test_fraction": 0.1,
+        "monitoring_fraction": 0.1,
         "settings": settings,
     }
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize(
+    ("use_case", "args", "message"),
+    [
+        ("churn", [], "Temporal splitting requires"),
+        ("phishing", [], "Random splitting requires"),
+        (
+            "phishing",
+            ["--input_parquet", "data.parquet", "--start_date", "2024-01-01"],
+            "Random splitting requires",
+        ),
+    ],
+)
+def test_create_split_rejects_incompatible_arguments(
+    use_case: str, args: list[str], message: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import mlkit
+
+    with pytest.raises(SystemExit):
+        mlkit.main(["create-split", "--use_case", use_case, *args])
+    assert message in capsys.readouterr().err
+
+
+@pytest.mark.smoke
+def test_create_split_cli_applies_random_fractions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import json
+
+    import pandas as pd
+
+    import mlkit
+
+    pd.DataFrame({"label": [0, 1] * 50}).to_parquet(
+        tmp_path / "prepared.parquet", index=False
+    )
+    monkeypatch.setattr(
+        mlkit, "RuntimeSettings", lambda: SimpleNamespace(data_dir=tmp_path)
+    )
+    mlkit.main(
+        [
+            "create-split",
+            "--use_case",
+            "phishing",
+            "--input_parquet",
+            "prepared.parquet",
+            "--test_fraction",
+            "0.2",
+            "--monitoring_fraction",
+            "0.0",
+            "--split_name",
+            "s",
+        ]
+    )
+    metadata = json.loads((tmp_path / "splits/s.json").read_text())
+    assert (
+        metadata["fit_rows"],
+        metadata["validation_rows"],
+        metadata["test_rows"],
+        metadata["monitoring_rows"],
+    ) == (70, 10, 20, 0)
+    assert pd.read_parquet(tmp_path / "splits/s_monitoring.parquet").empty
 
 
 @pytest.mark.smoke
@@ -590,11 +670,13 @@ def test_package_main_uses_selected_use_case_time_columns_for_monitoring(
     from mlkit import data
     from mlkit.monitoring import core
 
-    use_case = SimpleNamespace(name="alternate", time_column="event_date")
+    use_case = SimpleNamespace(
+        name="alternate", time_column="event_date", event_time_column="event_date"
+    )
     datasets = {"reference": object(), "analysis": object()}
     loaded: list[tuple[str, str]] = []
 
-    def fake_read_partitioned_dataset(
+    def fake_read_parquet_dataset(
         dataset_name: str, timestamp_column: str, *, settings: object
     ) -> object:
         loaded.append((dataset_name, timestamp_column))
@@ -604,7 +686,7 @@ def test_package_main_uses_selected_use_case_time_columns_for_monitoring(
         "mlkit.use_cases.get_use_case",
         lambda name: use_case,
     )
-    monkeypatch.setattr(data, "read_partitioned_dataset", fake_read_partitioned_dataset)
+    monkeypatch.setattr(data, "read_parquet_dataset", fake_read_parquet_dataset)
     monkeypatch.setattr(core, "build_monitoring_report", lambda **kwargs: None)
 
     mlkit.main(
@@ -629,6 +711,56 @@ def test_package_main_uses_selected_use_case_time_columns_for_monitoring(
 
 @pytest.mark.smoke
 @pytest.mark.parametrize(
+    ("override", "expected_reference", "expected_analysis"),
+    [(None, None, "timestamp"), ("event_date", "event_date", "event_date")],
+)
+def test_monitor_loads_undated_reference_and_dated_analysis(
+    monkeypatch: pytest.MonkeyPatch,
+    override: str | None,
+    expected_reference: str | None,
+    expected_analysis: str,
+) -> None:
+    import pandas as pd
+
+    import mlkit
+    from mlkit import data
+    from mlkit.monitoring import core
+
+    loaded: list[tuple[str, str | None]] = []
+
+    def fake_read(
+        dataset_name: str, timestamp_column: str | None, *, settings: object
+    ) -> pd.DataFrame:
+        loaded.append((dataset_name, timestamp_column))
+        return (
+            pd.DataFrame({timestamp_column: []}) if timestamp_column else pd.DataFrame()
+        )
+
+    monkeypatch.setattr(data, "read_parquet_dataset", fake_read)
+    monkeypatch.setattr(core, "build_monitoring_report", lambda **kwargs: None)
+    arguments = [
+        "monitor",
+        "--reference_dataset",
+        "reference",
+        "--analysis_dataset",
+        "analysis",
+        "--error_dataset",
+        "errors",
+        "--use_case",
+        "phishing",
+    ]
+    if override is not None:
+        arguments.extend(["--timestamp_column", override])
+    mlkit.main(arguments)
+    assert loaded == [
+        ("reference", expected_reference),
+        ("analysis", expected_analysis),
+        ("errors", expected_analysis),
+    ]
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize(
     ("command", "function_name", "dataset_name"),
     [
         ("ingest-prediction-logs", "ingest_prediction_logs", "api_predictions"),
@@ -645,7 +777,7 @@ def test_package_main_dispatches_log_ingestion(
 
     ingestion = importlib.import_module("mlkit.data.ingestion")
     observed: dict[str, str] = {}
-    use_case = SimpleNamespace(time_column="event_date")
+    use_case = SimpleNamespace(time_column="event_date", event_time_column="event_date")
 
     def fake_ingest(
         dataset_name: str, timestamp_column: str, *, settings: object

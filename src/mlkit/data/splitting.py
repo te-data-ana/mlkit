@@ -1,26 +1,120 @@
+"""Create and load reproducible training, evaluation and monitoring cohorts."""
+
 import json
 import logging
+from decimal import Decimal
 from pathlib import Path
-from typing import TypedDict
+from typing import Annotated, Literal, Self
 
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from sklearn.model_selection import train_test_split
 
 from mlkit.config import RuntimeSettings
 from mlkit.data.ingestion import normalize_strings
-from mlkit.data.storage import read_partitioned_dataset
+from mlkit.data.storage import read_parquet_dataset
 from mlkit.data.validation import validate_data
 from mlkit.use_cases import UseCase
 
 logger = logging.getLogger(__name__)
+COHORTS = ("fit", "validation", "test", "monitoring")
+Fraction = Annotated[float, Field(strict=True, ge=0, le=1, allow_inf_nan=False)]
+Count = Annotated[int, Field(strict=True, ge=0)]
 
 
-class SplitMetadata(TypedDict):
-    train_rows: int
-    test_rows: int
-    train_start: pd.Timestamp
-    train_end: pd.Timestamp
-    test_start: pd.Timestamp
-    test_end: pd.Timestamp
+class SplitMetadata(BaseModel):
+    """Requested and realized sizes and temporal bounds of prepared cohorts."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    strategy: Literal["temporal", "stratified_random"]
+    fit_fraction: Fraction
+    validation_fraction: Fraction
+    test_fraction: Fraction
+    monitoring_fraction: Fraction
+    fit_actual_fraction: Fraction
+    validation_actual_fraction: Fraction
+    test_actual_fraction: Fraction
+    monitoring_actual_fraction: Fraction
+    fit_rows: Count
+    validation_rows: Count
+    test_rows: Count
+    monitoring_rows: Count
+    random_state: Count | None = None
+    fit_start: str | None = None
+    fit_end: str | None = None
+    validation_start: str | None = None
+    validation_end: str | None = None
+    test_start: str | None = None
+    test_end: str | None = None
+    monitoring_start: str | None = None
+    monitoring_end: str | None = None
+
+    @model_validator(mode="after")
+    def validate_metadata(self) -> Self:
+        """Check consistency of the requested and realized split."""
+        requested = [getattr(self, f"{name}_fraction") for name in COHORTS]
+        counts = [getattr(self, f"{name}_rows") for name in COHORTS]
+        if (
+            any(value <= 0 for value in requested[:3])
+            or abs(sum(requested) - 1) > 1e-9
+            or any(value <= 0 for value in counts[:3])
+            or (requested[3] == 0) != (counts[3] == 0)
+        ):
+            raise ValueError("Invalid requested fractions or cohort counts.")
+        total = sum(counts)
+        previous_end: pd.Timestamp | None = None
+        for name, count in zip(COHORTS, counts):
+            if abs(getattr(self, f"{name}_actual_fraction") - count / total) > 1e-9:
+                raise ValueError(f"Actual fraction does not match {name} row count.")
+            start, end = getattr(self, f"{name}_start"), getattr(self, f"{name}_end")
+            if self.strategy == "temporal":
+                if count and (not start or not end):
+                    raise ValueError(f"Temporal {name} requires timestamp bounds.")
+                if not count and (start is not None or end is not None):
+                    raise ValueError(f"Empty {name} cannot have timestamp bounds.")
+                if start and end:
+                    try:
+                        first = pd.Timestamp(start)
+                        last = pd.Timestamp(end)
+                        if (
+                            first > last
+                            or (previous_end is not None and previous_end >= first)
+                            or pd.isna(first)
+                            or pd.isna(last)
+                        ):
+                            raise ValueError(
+                                "Temporal cohort bounds must be ordered and disjoint."
+                            )
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(
+                            f"Invalid temporal bounds for {name}: {exc}"
+                        ) from exc
+                    previous_end = last
+            elif start is not None or end is not None:
+                raise ValueError("Random splits cannot have temporal bounds.")
+        if (self.strategy == "stratified_random") != (self.random_state is not None):
+            raise ValueError("A random seed is required only for random splits.")
+        return self
+
+
+def load_split_metadata(path: Path) -> SplitMetadata:
+    """Read and validate split metadata.
+
+    Args:
+        path: Metadata JSON file.
+
+    Returns:
+        Validated metadata for all cohorts.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If its JSON or metadata is invalid.
+    """
+    try:
+        return SplitMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:
+        raise ValueError(f"Invalid split metadata '{path}': {exc}") from exc
 
 
 def load_and_validate_training_splits(
@@ -28,163 +122,289 @@ def load_and_validate_training_splits(
     split_dir: Path | None = None,
     *,
     use_case: UseCase,
+    metadata: SplitMetadata,
     settings: RuntimeSettings | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load and validate the prepared train and test Parquet files.
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load validated fit, validation and test cohorts and check their counts.
 
     Args:
-        split_name: Prefix shared by the train and test split filenames.
-        split_dir: Directory containing the split files. Defaults to the
-            configured ``data/splits`` directory.
-        use_case: Explicit schema and time-column contract for validation.
-        settings: Runtime snapshot used when no split directory is supplied.
+        split_name: Prefix of the prepared cohort files.
+        split_dir: Directory containing the files; defaults to the data directory.
+        use_case: Schema and time-column contract.
+        metadata: Validated metadata containing expected counts.
+        settings: Runtime settings used when no split directory is supplied.
 
     Returns:
-        Validated training and test DataFrames, retaining the use-case time
-        column for temporal training operations.
+        Fit, validation and test dataframes, in that order.
 
     Raises:
-        FileNotFoundError: If either split file does not exist.
-        pydantic.ValidationError: If a record in either split violates the schema.
-        ValueError: If required feature columns are missing or columns repeat.
+        FileNotFoundError: If a cohort file does not exist.
+        ValueError: If its data or row count is invalid.
     """
-    resolved_split_dir = (
-        split_dir
-        if split_dir is not None
-        else (settings or RuntimeSettings()).data_dir / "splits"
-    )
-    split_data: dict[str, pd.DataFrame] = {}
-
-    for split in ("train", "test"):
-        split_file = resolved_split_dir / f"{split_name}_{split}.parquet"
-        logger.info("Loading %s split from '%s'.", split, split_file)
-        df = pd.read_parquet(split_file)
+    resolved_dir = split_dir or (settings or RuntimeSettings()).data_dir / "splits"
+    parts = []
+    for name in COHORTS[:3]:
+        path = resolved_dir / f"{split_name}_{name}.parquet"
+        logger.info("Loading %s split from '%s'.", name, path)
+        df = pd.read_parquet(path)
         df.columns = normalize_strings(df.columns)
-        split_data[split] = validate_data(df.convert_dtypes(), use_case)
+        df = validate_data(df.convert_dtypes(), use_case)
+        if len(df) != getattr(metadata, f"{name}_rows"):
+            raise ValueError(f"Split metadata count does not match '{path}'.")
+        parts.append(df)
+    return parts[0], parts[1], parts[2]
 
-    return split_data["train"], split_data["test"]
+
+def _fractions(
+    validation_fraction: float, test_fraction: float, monitoring_fraction: float
+) -> dict[str, Decimal]:
+    values = (validation_fraction, test_fraction, monitoring_fraction)
+    if any(
+        isinstance(value, bool) or not isinstance(value, (int, float))
+        for value in values
+    ):
+        raise ValueError("Split fractions must be finite numbers.")
+    validation, test, monitoring = (Decimal(str(value)) for value in values)
+    if (
+        not all(value.is_finite() for value in (validation, test, monitoring))
+        or validation <= 0
+        or test <= 0
+        or monitoring < 0
+        or validation + test + monitoring >= 1
+    ):
+        raise ValueError(
+            "Validation and test fractions must be positive, monitoring fraction "
+            "nonnegative, and their sum less than one."
+        )
+    return {
+        "fit": 1 - validation - test - monitoring,
+        "validation": validation,
+        "test": test,
+        "monitoring": monitoring,
+    }
 
 
-def create_time_based_split(
-    dataset_name: str,
-    timestamp_column: str,
-    start_date: str | pd.Timestamp,
-    split_date: str | pd.Timestamp,
-    end_date: str | pd.Timestamp,
-    split_name: str = "default",
-    json_metadata: bool = True,
+def _random_parts(
+    df: pd.DataFrame, target: str, fractions: dict[str, Decimal], random_state: int
+) -> dict[str, pd.DataFrame]:
+    quotas = {name: fraction * len(df) for name, fraction in fractions.items()}
+    sizes = {name: int(quota) for name, quota in quotas.items()}
+    remainder = len(df) - sum(sizes.values())
+    order = sorted(COHORTS, key=lambda name: -(quotas[name] - sizes[name]))
+    for name in order[:remainder]:
+        sizes[name] += 1
+    if any(sizes[name] == 0 for name in COHORTS if fractions[name] > 0):
+        raise ValueError("Input is too small for the requested split fractions.")
+    remaining = df
+    parts = {}
+    for name in ("validation", "test", "monitoring"):
+        if sizes[name] == 0:
+            parts[name] = df.iloc[:0].copy()
+            continue
+        remaining, parts[name] = train_test_split(
+            remaining,
+            test_size=sizes[name],
+            random_state=random_state,
+            stratify=remaining[target],
+        )
+    parts["fit"] = remaining
+    return parts
+
+
+def _temporal_parts(
+    df: pd.DataFrame, time_column: str, fractions: dict[str, Decimal]
+) -> dict[str, pd.DataFrame]:
+    if time_column not in df:
+        raise ValueError("Temporal splitting requires the use-case time column.")
+    data = df.copy()
+    data[time_column] = pd.to_datetime(data[time_column], errors="coerce", utc=True)
+    if data[time_column].isna().any():
+        raise ValueError("Temporal split timestamps must be valid and non-missing.")
+    data = data.sort_values(time_column, kind="stable").reset_index(drop=True)
+    sizes = data.groupby(time_column, sort=True).size().tolist()
+    active = [name for name in COHORTS if fractions[name] > 0]
+    if len(sizes) < len(active):
+        raise ValueError("Temporal splitting requires more distinct timestamp groups.")
+    ends = []
+    count = 0
+    for size in sizes:
+        count += size
+        ends.append(count)
+    start_group = 0
+    start_row = 0
+    cumulative = Decimal(0)
+    parts = {}
+    for index, name in enumerate(active[:-1]):
+        cumulative += fractions[name]
+        target = cumulative * len(data)
+        last_candidate = len(sizes) - (len(active) - index - 1)
+        boundary = min(
+            range(start_group, last_candidate),
+            key=lambda group: (abs(Decimal(ends[group]) - target), ends[group]),
+        )
+        end_row = ends[boundary]
+        parts[name] = data.iloc[start_row:end_row].copy()
+        start_group, start_row = boundary + 1, end_row
+    parts[active[-1]] = data.iloc[start_row:].copy()
+    if fractions["monitoring"] == 0:
+        parts["monitoring"] = data.iloc[:0].copy()
+    return parts
+
+
+def create_data_splits(
+    use_case: UseCase,
+    df: pd.DataFrame,
     *,
+    split_name: str = "default",
+    validation_fraction: float = 0.1,
+    test_fraction: float = 0.1,
+    monitoring_fraction: float = 0.1,
+    random_state: int = 42,
     settings: RuntimeSettings | None = None,
 ) -> SplitMetadata:
-    """
-    Create train and test datasets using an out-of-time split and
-    persist them as Parquet files.
+    """Create all cohorts and persist their validated metadata.
 
-    Records with timestamps prior to ``split_date`` are assigned to the
-    training dataset. Records with timestamps on or after ``split_date``
-    are assigned to the test dataset.
-
-    The resulting datasets are written to:
-
-        data/splits/{split_name}_train.parquet
-        data/splits/{split_name}_test.parquet
+    Fractions refer to the full input. Temporal boundaries preserve timestamp
+    groups; random cohorts are seeded and stratified.
 
     Args:
-        dataset_name:
-            Name of the partitioned dataset to read from.
-        timestamp_column:
-            Name of the timestamp column used for filtering and
-            splitting.
-        start_date:
-            Inclusive start of the extraction window.
-        split_date:
-            First timestamp that belongs to the test dataset.
-        end_date:
-            Inclusive end of the extraction window.
-        split_name:
-            Prefix used for the generated split filenames.
-        json_metadata:
-            If split metadata should be persisted to JSON file.
-        settings: Runtime snapshot used for input and output locations.
+        use_case: Split strategy and target/time-column contract.
+        df: Input records.
+        split_name: Output filename prefix.
+        validation_fraction: Fraction reserved for threshold selection.
+        test_fraction: Fraction reserved for evaluation.
+        monitoring_fraction: Fraction reserved for monitoring; zero disables it.
+        random_state: Seed for stratified random splitting.
+        settings: Runtime settings for output locations.
 
     Returns:
-        Metadata describing the generated split, including row counts
-        and date boundaries for the train and test datasets.
+        Validated requested and realized split metadata.
 
     Raises:
-        ValueError:
-            If ``split_date`` is not strictly later than
-            ``start_date``.
-        ValueError:
-            If ``split_date`` is later than ``end_date``.
-        ValueError:
-            If either the training or test dataset is empty.
+        ValueError: If fractions, input, or resulting cohorts are invalid.
     """
+    fractions = _fractions(validation_fraction, test_fraction, monitoring_fraction)
+    target = use_case.target_column
+    if (
+        target not in df
+        or df[target].isna().any()
+        or set(df[target].unique()) != {0, 1}
+    ):
+        raise ValueError(
+            "Splitting requires a non-missing binary target with both classes."
+        )
+    if use_case.split_strategy == "temporal":
+        if use_case.time_column is None:
+            raise ValueError("Temporal splitting requires a time column.")
+        parts = _temporal_parts(df, use_case.time_column, fractions)
+    elif use_case.split_strategy == "stratified_random":
+        if type(random_state) is not int or random_state < 0:
+            raise ValueError("Random split seed must be a nonnegative integer.")
+        parts = _random_parts(df, target, fractions, random_state)
+    else:
+        raise ValueError(f"Unsupported split strategy: {use_case.split_strategy}")
+    for name in COHORTS:
+        part = parts[name]
+        if fractions[name] > 0 and (part.empty or set(part[target].unique()) != {0, 1}):
+            raise ValueError(
+                f"Nonempty {name} cohort must contain both binary classes."
+            )
 
-    start_date = pd.Timestamp(start_date)
-    split_date = pd.Timestamp(split_date)
-    end_date = pd.Timestamp(end_date)
+    values: dict[str, object] = {"strategy": use_case.split_strategy}
+    if use_case.split_strategy == "stratified_random":
+        values["random_state"] = random_state
+    for name in COHORTS:
+        part = parts[name]
+        values[f"{name}_fraction"] = float(fractions[name])
+        values[f"{name}_rows"] = len(part)
+        values[f"{name}_actual_fraction"] = len(part) / len(df)
+        if use_case.split_strategy == "temporal" and not part.empty:
+            assert use_case.time_column is not None
+            values[f"{name}_start"] = part[use_case.time_column].min().isoformat()
+            values[f"{name}_end"] = part[use_case.time_column].max().isoformat()
+    metadata = SplitMetadata.model_validate(values)
+    split_dir = (settings or RuntimeSettings()).data_dir / "splits"
+    split_dir.mkdir(parents=True, exist_ok=True)
+    for name in COHORTS:
+        parts[name].to_parquet(split_dir / f"{split_name}_{name}.parquet", index=False)
+    (split_dir / f"{split_name}.json").write_text(
+        json.dumps(metadata.model_dump(exclude_none=True), indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    return metadata
 
-    if start_date >= split_date:
-        msg = "'split_date' must be later than 'start_date'."
-        raise ValueError(msg)
 
-    if split_date > end_date:
-        msg = "'split_date' must be before or equal to 'end_date'."
-        raise ValueError(msg)
+def create_split(
+    use_case: UseCase,
+    *,
+    dataset_name: str | None = None,
+    input_parquet: str | None = None,
+    split_name: str = "default",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    validation_fraction: float = 0.1,
+    test_fraction: float = 0.1,
+    monitoring_fraction: float = 0.1,
+    random_state: int = 42,
+    settings: RuntimeSettings | None = None,
+) -> SplitMetadata:
+    """Load a dataset and create all cohorts using its use-case strategy.
 
+    Args:
+        use_case: Contract defining the split strategy.
+        dataset_name: Partitioned temporal dataset name.
+        input_parquet: Random split input relative to the data directory.
+        split_name: Output filename prefix.
+        start_date: Optional inclusive temporal extraction start.
+        end_date: Optional inclusive temporal extraction end.
+        validation_fraction: Fraction reserved for threshold selection.
+        test_fraction: Fraction reserved for evaluation.
+        monitoring_fraction: Fraction reserved for monitoring; zero disables it.
+        random_state: Seed for stratified random splitting.
+        settings: Runtime settings for input and output locations.
+
+    Returns:
+        Validated requested and realized split metadata.
+
+    Raises:
+        ValueError: If options, input, or resulting cohorts are invalid.
+        FileNotFoundError: If the input dataset does not exist.
+    """
     settings = settings or RuntimeSettings()
-    df = read_partitioned_dataset(
-        dataset_name=dataset_name,
-        timestamp_column=timestamp_column,
-        start=start_date,
-        end=end_date,
+    if use_case.split_strategy == "temporal":
+        if (
+            not dataset_name
+            or input_parquet is not None
+            or use_case.time_column is None
+        ):
+            raise ValueError("Temporal splitting requires a timestamped dataset name.")
+        df = read_parquet_dataset(
+            dataset_name=dataset_name,
+            timestamp_column=use_case.time_column,
+            start=start_date,
+            end=end_date,
+            settings=settings,
+            require_valid_timestamps=True,
+        )
+    elif use_case.split_strategy == "stratified_random":
+        if (
+            not input_parquet
+            or dataset_name is not None
+            or start_date is not None
+            or end_date is not None
+        ):
+            raise ValueError("Random splitting requires input_parquet and no dates.")
+        df = pd.read_parquet(settings.data_dir / input_parquet)
+    else:
+        raise ValueError(f"Unsupported split strategy: {use_case.split_strategy}")
+    return create_data_splits(
+        use_case,
+        df,
+        split_name=split_name,
+        validation_fraction=validation_fraction,
+        test_fraction=test_fraction,
+        monitoring_fraction=monitoring_fraction,
+        random_state=random_state,
         settings=settings,
     )
-
-    train = df.loc[df[timestamp_column] < split_date].reset_index(drop=True)
-
-    test = df.loc[df[timestamp_column] >= split_date].reset_index(drop=True)
-
-    if train.empty:
-        msg = "Training split is empty."
-        raise ValueError(msg)
-
-    if test.empty:
-        msg = "Test split is empty."
-        raise ValueError(msg)
-
-    output_dir = settings.data_dir / "splits"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    train.to_parquet(
-        output_dir / f"{split_name}_train.parquet",
-        index=False,
-    )
-
-    test.to_parquet(
-        output_dir / f"{split_name}_test.parquet",
-        index=False,
-    )
-
-    split_metadata = SplitMetadata(
-        train_rows=len(train),
-        test_rows=len(test),
-        train_start=train[timestamp_column].min(),
-        train_end=train[timestamp_column].max(),
-        test_start=test[timestamp_column].min(),
-        test_end=test[timestamp_column].max(),
-    )
-
-    if json_metadata:
-        json_file_path = output_dir / f"{split_name}.json"
-        serialized_metadata = {
-            key: value.isoformat() if hasattr(value, "isoformat") else value
-            for key, value in split_metadata.items()
-        }
-        json_file_path.write_text(
-            json.dumps(serialized_metadata, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-    return split_metadata

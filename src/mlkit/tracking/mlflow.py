@@ -100,16 +100,26 @@ def log_experiment_result(
     """
     logger.info("Logging training parameters and tags to MLflow.")
     # log all parameters required for reproducibility
+    seeds = {
+        "root_random_state": config.random_state,
+        "training_random_state": config.training_seed,
+    }
+    if "random_state" in result.classifier_config:
+        seeds["classifier_random_state"] = result.classifier_config["random_state"]
+    mlflow.log_params(seeds)
     # log classifier and its hyper-parameters
     mlflow.log_params(result.classifier_config)
-    # log data parameters
-    mlflow.log_params(
-        {
-            "use_case": use_case.name,
-            "column_target": use_case.target_column,
-            "column_time": use_case.time_column,
-        }
-    )
+    # log use_case tags
+    use_case_tags = {
+        "use_case_name": use_case.name,
+        "calibration": calibration_method,
+        "threshold_data": result.threshold_data,
+        "feature_count": len(result.feature_names_out),
+        "target_column": use_case.target_column,
+    }
+    if use_case.time_column is not None:
+        use_case_tags["time_column"] = use_case.time_column
+    mlflow.set_tags(use_case_tags)
     # log preprocessing hyper-parameters
     mlflow.log_params(
         {
@@ -146,15 +156,6 @@ def log_experiment_result(
         }
         promotion_parameters["promotion_min_delta"] = config.promotion.min_delta
         mlflow.log_params(promotion_parameters)
-
-    # log relevant tags
-    mlflow.set_tags(
-        {
-            "calibration": calibration_method,
-            "threshold_data": result.threshold_data,
-            "feature_count": len(result.feature_names_out),
-        }
-    )
 
     logger.info("Logging evaluation metrics to MLflow: %s.", result.metrics)
     mlflow.log_metrics(result.metrics)

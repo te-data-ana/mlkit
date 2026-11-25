@@ -9,6 +9,7 @@ from mlkit.config.schemas import (
     PromotionConfig,
     ThresholdConfig,
     TrainingConfig,
+    TrainingSeedOverrides,
     TuningConfig,
 )
 from mlkit.config.settings import RuntimeSettings
@@ -45,10 +46,12 @@ def load_config(
         raw = yaml.safe_load(f)
 
     return TrainingConfig(
-        preprocessing=PreprocessingConfig(**raw["preprocessing"]),
         model=ClassifierConfig(**raw["model"]),
+        random_state=raw.get("random_state", 26),
+        seed_overrides=TrainingSeedOverrides(**raw.get("seed_overrides", {})),
+        preprocessing=PreprocessingConfig(**raw["preprocessing"]),
+        tuning=TuningConfig(**raw.get("tuning", {})),
         calibration=CalibrationConfig(**raw.get("calibration", {})),
         threshold=ThresholdConfig(**raw.get("threshold", {})),
         promotion=PromotionConfig(**raw.get("promotion", {})),
-        tuning=TuningConfig(**raw.get("tuning", {})),
     ), config_file_path

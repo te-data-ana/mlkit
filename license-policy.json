@@ -44,6 +44,11 @@
       "reason": "The installed LICENSE file grants the MIT License; pip-licenses cannot identify the metadata label."
     },
     {
+      "package": "mlkit-use-cases",
+      "license": "UNKNOWN",
+      "reason": "Own module linked to mlkit to enable use cases, not a separate package."
+    },
+    {
       "package": "nvidia-nccl-cu12",
       "license": "LicenseRef-NVIDIA-Proprietary",
       "reason": "The installed license file grants BSD-style source and binary redistribution rights; this is an explicitly approved NVIDIA CUDA ecosystem package."

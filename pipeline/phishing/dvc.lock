@@ -1,0 +1,173 @@
+schema: '2.0'
+stages:
+  fetch_and_prepare_uci:
+    cmd: uv run --group datasets mlkit fetch-and-prepare-uci --dataset-id 967
+      --snapshot-dir data/phishing/raw/uci --output-path
+      data/phishing/prepared.parquet --use_case phishing --map-target label 0 1
+      --map-target label 1 0
+    deps:
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        dataset_id: 967
+        use_case: phishing
+    outs:
+    - path: data/phishing/prepared.parquet
+      hash: md5
+      md5: 82f5eac6a3dcb047552a1cb7501b5618
+      size: 5270414
+    - path: data/phishing/raw/uci
+      hash: md5
+      md5: b1b27bc2b0bdc5dbce5b6804fac39870.dir
+      size: 22239687
+      nfiles: 4
+  create_split:
+    cmd: DATA_DIR=$PWD/data/phishing uv run mlkit create-split --use_case
+      phishing --input_parquet prepared.parquet --split_name oos-42
+      --random_state 42 --test_fraction 0.1 --monitoring_fraction 0.1
+    deps:
+    - path: data/phishing/prepared.parquet
+      hash: md5
+      md5: 82f5eac6a3dcb047552a1cb7501b5618
+      size: 5270414
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        split:
+          name: oos-42
+          random_state: 42
+          test_fraction: 0.1
+          monitoring_fraction: 0.1
+        use_case: phishing
+    outs:
+    - path: data/phishing/splits
+      hash: md5
+      md5: 0d348e40a6e71c85543fcc1b7ea9dd9e.dir
+      size: 5405499
+      nfiles: 4
+  train_model:
+    cmd: DATA_DIR=$PWD/data/phishing uv run mlkit train --use_case phishing
+      --config lr.yaml --split_name oos-42 --calibration_method isotonic
+      --n_jobs 16 --tune-model true --register-model true --promote-model true
+    deps:
+    - path: data/phishing/splits
+      hash: md5
+      md5: 0d348e40a6e71c85543fcc1b7ea9dd9e.dir
+      size: 5405499
+      nfiles: 4
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/config/lr.yaml
+      hash: md5
+      md5: b91fdb6bf9c88ec767632f5ecfa85b13
+      size: 494
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        calibration.method: isotonic
+        model:
+          classifier: lr
+          register_model: true
+          promote_model: true
+        split.name: oos-42
+        training.n_jobs: 16
+        training.tune_model: true
+        use_case: phishing
+    outs:
+    - path: data/phishing/manifests
+      hash: md5
+      md5: 74faa0ae49cf8c9267e7b5fa36daa50c.dir
+      size: 13741
+      nfiles: 3
+  batch_predict:
+    cmd: DATA_DIR=$PWD/data/phishing uv run mlkit batch-predict --use_case
+      phishing --input_dataset splits/oos-42_test.parquet --output_dataset
+      predictions/phishing_lr_oos-42 --model_manifest
+      manifests/phishing-lr-oos-42.json
+    deps:
+    - path: data/phishing/manifests/phishing-lr-oos-42.json
+      hash: md5
+      md5: 7a787be7f059b76b2786e60b3d46421c
+      size: 4737
+    - path: data/phishing/splits/oos-42_test.parquet
+      hash: md5
+      md5: db35fa569cacacf355d737806146c658
+      size: 586262
+    - path: pyproject.toml
+      hash: md5
+      md5: bcf7b99bc93b018a7410201884f931c5
+      size: 2100
+    - path: src/mlkit
+      hash: md5
+      md5: 1e637922fc28acd06c493296b1d0c901.dir
+      size: 278970
+      nfiles: 49
+    - path: use_cases/src/use_cases/phishing
+      hash: md5
+      md5: 42be3e70e8397b2640877660e64e2c99.dir
+      size: 2561
+      nfiles: 2
+    - path: uv.lock
+      hash: md5
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
+    params:
+      pipeline/phishing.yaml:
+        model.classifier: lr
+        split.name: oos-42
+        use_case: phishing
+    outs:
+    - path: data/phishing/predictions
+      hash: md5
+      md5: 904649cc4bff469ef83f25732e63b60c.dir
+      size: 1812165
+      nfiles: 3

@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def create_app(use_case: UseCase) -> FastAPI:
     """Create an API application for an explicitly selected use case."""
     request_model = use_case.feature_schema
-    response_model = prediction_response_schema(time_column=use_case.time_column)
+    response_model = prediction_response_schema(time_column=use_case.event_time_column)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
@@ -113,7 +113,9 @@ def create_app(use_case: UseCase) -> FastAPI:
                 "Prediction completed.",
                 extra={"request_id": request_id, "latency_ms": latency_ms},
             )
-            return prediction.to_response(time_column=predictor.use_case.time_column)
+            return prediction.to_response(
+                time_column=predictor.use_case.event_time_column
+            )
         except Exception as exc:
             latency_ms = round(number=(perf_counter() - start) * 1000, ndigits=2)
             try:

@@ -31,13 +31,6 @@ def assert_training_result(result) -> None:
     assert metrics["fit_time_sec"] >= 0
 
 
-@pytest.mark.integration
-def test_run_training_job_returns_valid_training_result(
-    registered_model: dict[str, object],
-) -> None:
-    assert_training_result(registered_model["result"])
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize("classifier", ["lr", "dt", "rf", "hgb"])
 def test_train_returns_valid_result_for_supported_classifier(
@@ -52,7 +45,8 @@ def test_train_returns_valid_result_for_supported_classifier(
     test_df = temporal_sample_training_df.iloc[6:]
     result = train_model(
         config=cfg,
-        train_df=train_df,
+        fit_df=train_df.iloc[:4],
+        validation_df=train_df.iloc[4:],
         test_df=test_df,
         use_case=CHURN_USE_CASE,
     )
@@ -64,33 +58,15 @@ def test_train_returns_valid_result_for_supported_classifier(
         "Prepared training data:",
         "Starting model fit",
         "Model pipeline fit completed",
-        "Prediction on test set completed",
         "Selecting decision threshold",
         "Selected decision threshold",
-        "Evaluating model on out-of-time test data",
+        "Prediction on test set completed",
+        "Evaluating model on test data",
         "Evaluation metrics:",
         "Prepared calibration reliability diagram",
     ]
     log_positions = [caplog.text.index(message) for message in log_messages]
     assert log_positions == sorted(log_positions)
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("classifier", ["lr", "dt", "rf", "hgb"])
-def test_trained_pipeline_predicts_classes_and_probabilities(
-    classifier: Literal["lr", "dt", "rf", "hgb"],
-    config_factory: Callable[..., TrainingConfig],
-    temporal_sample_training_df: pd.DataFrame,
-) -> None:
-    cfg = config_factory(classifier=classifier)
-    train_df = temporal_sample_training_df.iloc[:6]
-    test_df = temporal_sample_training_df.iloc[6:]
-    result = train_model(
-        config=cfg,
-        train_df=train_df,
-        test_df=test_df,
-        use_case=CHURN_USE_CASE,
-    )
 
     X = temporal_sample_training_df.iloc[:6].loc[
         :, list(CHURN_USE_CASE.feature_columns)
@@ -119,7 +95,8 @@ def test_train_rejects_unknown_classifier(
         test_df = temporal_sample_training_df.iloc[6:]
         train_model(
             config=cfg,
-            train_df=train_df,
+            fit_df=train_df.iloc[:4],
+            validation_df=train_df.iloc[4:],
             test_df=test_df,
             use_case=CHURN_USE_CASE,
         )
@@ -137,13 +114,15 @@ def test_train_returns_reproducible_metrics_for_same_input(
     test_df = temporal_sample_training_df.iloc[6:]
     result1 = train_model(
         config=cfg,
-        train_df=train_df,
+        fit_df=train_df.iloc[:4],
+        validation_df=train_df.iloc[4:],
         test_df=test_df,
         use_case=CHURN_USE_CASE,
     )
     result2 = train_model(
         config=cfg,
-        train_df=train_df,
+        fit_df=train_df.iloc[:4],
+        validation_df=train_df.iloc[4:],
         test_df=test_df,
         use_case=CHURN_USE_CASE,
     )
@@ -160,11 +139,12 @@ def test_train_uses_override_and_declared_feature_columns(
     cfg = config_factory(classifier="dt")
     dated_df = sample_training_df.copy()
     dated_df["reference_date"] = pd.date_range("2026-01-01", periods=len(dated_df))
-    dated_df["customerid"] = range(len(dated_df))
+    dated_df["customer_id"] = range(len(dated_df))
 
     result = train_model(
         config=cfg,
-        train_df=dated_df.iloc[:7],
+        fit_df=dated_df.iloc[:5],
+        validation_df=dated_df.iloc[5:7],
         test_df=dated_df.iloc[7:],
         use_case=CHURN_USE_CASE,
         model_params_override={"max_depth": 2},
@@ -173,7 +153,7 @@ def test_train_uses_override_and_declared_feature_columns(
     assert result.classifier_config["max_depth"] == 2
     assert result.feature_names_in == list(CHURN_USE_CASE.feature_columns)
     assert "reference_date" not in result.feature_names_in
-    assert "customerid" not in result.feature_names_in
+    assert "customer_id" not in result.feature_names_in
 
 
 @pytest.mark.unit
@@ -190,7 +170,8 @@ def test_train_rejects_missing_use_case_feature(
     ):
         train_model(
             config=cfg,
-            train_df=train_df.iloc[:7],
+            fit_df=train_df.iloc[:5],
+            validation_df=train_df.iloc[5:7],
             test_df=train_df.iloc[7:],
             use_case=CHURN_USE_CASE,
         )
@@ -204,6 +185,7 @@ def test_train_fits_time_aware_calibrated_classifier(
     sample_training_df: pd.DataFrame,
 ) -> None:
     cfg = config_factory(classifier="rf")
+    cfg.model.classifier_params = {"n_estimators": 5}
     train_df = pd.concat([sample_training_df] * 8, ignore_index=True)
     train_df["reference_date"] = pd.date_range(
         "2026-01-01",
@@ -212,7 +194,8 @@ def test_train_fits_time_aware_calibrated_classifier(
 
     result = train_model(
         config=cfg,
-        train_df=train_df,
+        fit_df=train_df.iloc[:70],
+        validation_df=train_df.iloc[70:],
         test_df=sample_training_df.copy(),
         use_case=CHURN_USE_CASE,
         calibration_method=method,
@@ -243,7 +226,8 @@ def test_train_uses_job_budget_for_uncalibrated_classifier(
 
     result = train_model(
         config=cfg,
-        train_df=train_df,
+        fit_df=train_df.iloc[:4],
+        validation_df=train_df.iloc[4:],
         test_df=test_df,
         use_case=CHURN_USE_CASE,
         n_jobs=2,
@@ -255,7 +239,7 @@ def test_train_uses_job_budget_for_uncalibrated_classifier(
 
 
 @pytest.mark.unit
-def test_train_fits_once_and_selects_threshold_from_oot_test(
+def test_train_fits_once_and_selects_threshold_from_validation(
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
@@ -268,15 +252,18 @@ def test_train_fits_once_and_selects_threshold_from_oot_test(
 
     result = train_model(
         config=cfg,
-        train_df=train_df,
+        fit_df=train_df.iloc[:4],
+        validation_df=train_df.iloc[4:],
         test_df=test_df,
         use_case=CHURN_USE_CASE,
     )
 
-    X_test = test_df.loc[:, list(CHURN_USE_CASE.feature_columns)]
-    probabilities = result.trained_pipeline.predict_proba(X_test)[:, 1]
-    expected_threshold = select_f1_threshold(test_df["churn"], probabilities)
+    validation_df = train_df.iloc[4:]
+    X_validation = validation_df.loc[:, list(CHURN_USE_CASE.feature_columns)]
+    probabilities = result.trained_pipeline.predict_proba(X_validation)[:, 1]
+    expected_threshold = select_f1_threshold(validation_df["churn"], probabilities)
 
     fit_spy.assert_called_once()
+    assert fit_spy.call_args.kwargs["train_df"].equals(train_df.iloc[:4])
     assert result.threshold == pytest.approx(expected_threshold)
-    assert result.threshold_data == "out_of_time_test"
+    assert result.threshold_data == "training_validation"

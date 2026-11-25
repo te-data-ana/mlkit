@@ -41,29 +41,21 @@ def patch_prediction_logger(
 
 
 @pytest.mark.unit
-def test_add_request_id_header_is_preserved(client: TestClient) -> None:
+def test_health_endpoint_preserves_and_generates_request_ids(
+    client: TestClient,
+) -> None:
     response = client.get(
         "/health",
         headers={"X-Request-ID": "test-request-id"},
     )
 
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
     assert response.headers["X-Request-ID"] == "test-request-id"
-
-
-@pytest.mark.unit
-def test_add_request_id_header_is_generated(client: TestClient) -> None:
     response = client.get("/health")
 
     assert "X-Request-ID" in response.headers
     assert response.headers["X-Request-ID"]
-
-
-@pytest.mark.unit
-def test_health_endpoint_returns_healthy_status(client: TestClient) -> None:
-    response = client.get("/health")
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
 
 
 @pytest.mark.unit

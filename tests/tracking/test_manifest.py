@@ -41,7 +41,7 @@ def test_training_manifest_round_trips_json(
         "threshold",
     ]
     assert list(payload["lifecycle"]) == ["registration", "promotion"]
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["model"]["use_case"] == "churn"
     assert "use_case" not in payload["data"]
     assert payload["data"]["time_column"] == "reference_date"
@@ -65,6 +65,31 @@ def test_unregistered_training_manifest_round_trips_logged_model_reference(
 
     manifest.write(output)
 
+    assert TrainingManifest.read(output) == manifest
+
+
+@pytest.mark.unit
+def test_manifest_round_trips_missing_training_time_column(
+    tmp_path: Path, training_manifest_factory: TrainingManifest
+) -> None:
+    manifest = training_manifest_factory()
+    manifest = replace(manifest, data=replace(manifest.data, time_column=None))
+    output = tmp_path / "manifest.json"
+    manifest.write(output)
+    assert TrainingManifest.read(output) == manifest
+
+
+@pytest.mark.unit
+def test_manifest_round_trips_split_fractions(
+    tmp_path: Path, training_manifest_factory: TrainingManifest
+) -> None:
+    manifest = training_manifest_factory()
+    metadata = dict(
+        manifest.data.split_metadata, test_fraction=0.2, monitoring_fraction=0.0
+    )
+    manifest = replace(manifest, data=replace(manifest.data, split_metadata=metadata))
+    output = tmp_path / "manifest.json"
+    manifest.write(output)
     assert TrainingManifest.read(output) == manifest
 
 

@@ -1,162 +1,163 @@
 schema: '2.0'
 stages:
   add_reference_dates:
-    cmd: uv run python -m mlkit.data.manipulation --use_case churn --input_csv
-      customer_churn_dataset-training.csv --output_csv training.csv --start_date
-      2023-01-01 --end_date 2025-12-01
+    cmd: DATA_DIR=$PWD/data/churn uv run python -m mlkit.data.manipulation
+      --use_case churn --input_csv customer_churn_dataset-training.csv
+      --output_csv training.csv --start_date 2023-01-01 --end_date 2025-12-01
     deps:
-    - path: data/raw/customer_churn_dataset-training.csv
+    - path: data/churn/raw/customer_churn_dataset-training.csv
       hash: md5
       md5: a8d02f389b1e2a894b1decc4dfb658be
       size: 23448754
     - path: pyproject.toml
       hash: md5
-      md5: b534eebaaaed94e3c8bae26fd1beec7c
-      size: 1818
+      md5: 482eaa400aa30d9c0c57f2e06efd3115
+      size: 2055
     - path: src/mlkit/config
       hash: md5
-      md5: c6f2c0e4a18242374a3ceeb749c57ba3.dir
-      size: 22116
+      md5: d29b11c3334c9788daf09703abde9d55.dir
+      size: 23928
       nfiles: 10
     - path: src/mlkit/data
       hash: md5
-      md5: a25fa99a8d5cda9f4562deeb89a3e2ee.dir
-      size: 58355
+      md5: 9284a2ed29ed3b5654792d63aa75ee4d.dir
+      size: 61924
       nfiles: 14
     - path: src/mlkit/use_cases
       hash: md5
-      md5: 8febb9d54a539dcaf208c5a1a307a9af.dir
-      size: 25348
-      nfiles: 14
+      md5: f29f10d146361c98a2abc52b71a46531.dir
+      size: 25469
+      nfiles: 10
     - path: uv.lock
       hash: md5
-      md5: cd6bc6fd3e2ded12beb53a28cc385952
-      size: 404969
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
     params:
       params.yaml:
         use_case: churn
     outs:
-    - path: data/raw/training.csv
+    - path: data/churn/raw/training.csv
       hash: md5
       md5: b3d704bdd954262ca30ab3aa2ce72057
       size: 28260531
   add_inference_reference_dates:
-    cmd: uv run python -m mlkit.data.manipulation --use_case churn --input_csv
-      customer_churn_dataset-inference.csv --output_csv inference.csv
-      --start_date 2026-01-01 --end_date 2026-06-01
+    cmd: DATA_DIR=$PWD/data/churn uv run python -m mlkit.data.manipulation
+      --use_case churn --input_csv customer_churn_dataset-inference.csv
+      --output_csv inference.csv --start_date 2026-01-01 --end_date 2026-06-01
     deps:
-    - path: data/raw/customer_churn_dataset-inference.csv
+    - path: data/churn/raw/customer_churn_dataset-inference.csv
       hash: md5
       md5: 55289b95d9b4310f554778c725097c5b
       size: 3282220
     - path: pyproject.toml
       hash: md5
-      md5: b534eebaaaed94e3c8bae26fd1beec7c
-      size: 1818
+      md5: 482eaa400aa30d9c0c57f2e06efd3115
+      size: 2055
     - path: src/mlkit/config
       hash: md5
-      md5: c6f2c0e4a18242374a3ceeb749c57ba3.dir
-      size: 22116
+      md5: d29b11c3334c9788daf09703abde9d55.dir
+      size: 23928
       nfiles: 10
     - path: src/mlkit/data
       hash: md5
-      md5: a25fa99a8d5cda9f4562deeb89a3e2ee.dir
-      size: 58355
+      md5: 9284a2ed29ed3b5654792d63aa75ee4d.dir
+      size: 61924
       nfiles: 14
     - path: src/mlkit/use_cases
       hash: md5
-      md5: 8febb9d54a539dcaf208c5a1a307a9af.dir
-      size: 25348
-      nfiles: 14
+      md5: f29f10d146361c98a2abc52b71a46531.dir
+      size: 25469
+      nfiles: 10
     - path: uv.lock
       hash: md5
-      md5: cd6bc6fd3e2ded12beb53a28cc385952
-      size: 404969
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
     params:
       params.yaml:
         use_case: churn
     outs:
-    - path: data/raw/inference.csv
+    - path: data/churn/raw/inference.csv
       hash: md5
       md5: e204a8d9fb187d458c71108e3f752033
       size: 4054722
   prepare_partitioned_data:
-    cmd: uv run mlkit prepare-data --use_case churn --input_csv training.csv &&
-      uv run mlkit prepare-data --use_case churn --input_csv inference.csv
+    cmd: DATA_DIR=$PWD/data/churn uv run mlkit prepare-data --use_case churn
+      --input_csv training.csv && DATA_DIR=$PWD/data/churn uv run mlkit
+      prepare-data --use_case churn --input_csv inference.csv
     deps:
-    - path: data/raw/inference.csv
+    - path: data/churn/raw/inference.csv
       hash: md5
       md5: e204a8d9fb187d458c71108e3f752033
       size: 4054722
-    - path: data/raw/training.csv
+    - path: data/churn/raw/training.csv
       hash: md5
       md5: b3d704bdd954262ca30ab3aa2ce72057
       size: 28260531
     - path: pyproject.toml
       hash: md5
-      md5: b534eebaaaed94e3c8bae26fd1beec7c
-      size: 1818
+      md5: 482eaa400aa30d9c0c57f2e06efd3115
+      size: 2055
     - path: src/mlkit/config
       hash: md5
-      md5: c6f2c0e4a18242374a3ceeb749c57ba3.dir
-      size: 22116
+      md5: d29b11c3334c9788daf09703abde9d55.dir
+      size: 23928
       nfiles: 10
     - path: src/mlkit/data
       hash: md5
-      md5: a25fa99a8d5cda9f4562deeb89a3e2ee.dir
-      size: 58355
+      md5: 9284a2ed29ed3b5654792d63aa75ee4d.dir
+      size: 61924
       nfiles: 14
     - path: src/mlkit/use_cases
       hash: md5
-      md5: 8febb9d54a539dcaf208c5a1a307a9af.dir
-      size: 25348
-      nfiles: 14
+      md5: f29f10d146361c98a2abc52b71a46531.dir
+      size: 25469
+      nfiles: 10
     - path: uv.lock
       hash: md5
-      md5: cd6bc6fd3e2ded12beb53a28cc385952
-      size: 404969
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
     params:
       params.yaml:
         use_case: churn
     outs:
-    - path: data/partitioned
+    - path: data/churn/partitioned
       hash: md5
-      md5: e6bb634b21e9ac7a5228cbcb9f8028c6.dir
-      size: 9453558
+      md5: 98d87fe91aa8c02576d9c5a8ef74034f.dir
+      size: 13788438
       nfiles: 42
   create_oot_split:
-    cmd: uv run mlkit create-split --use_case churn --dataset_name partitioned
-      --start_date 2025-04-01 --split_date 2026-04-01 --end_date 2026-06-30
-      --split_name oot-26Q2
+    cmd: DATA_DIR=$PWD/data/churn uv run mlkit create-split --use_case churn
+      --dataset_name partitioned --start_date 2025-04-01 --split_date 2026-04-01
+      --end_date 2026-06-30 --split_name oot-26Q2
     deps:
-    - path: data/partitioned
+    - path: data/churn/partitioned
       hash: md5
-      md5: e6bb634b21e9ac7a5228cbcb9f8028c6.dir
-      size: 9453558
+      md5: 98d87fe91aa8c02576d9c5a8ef74034f.dir
+      size: 13788438
       nfiles: 42
     - path: pyproject.toml
       hash: md5
-      md5: b534eebaaaed94e3c8bae26fd1beec7c
-      size: 1818
+      md5: 482eaa400aa30d9c0c57f2e06efd3115
+      size: 2055
     - path: src/mlkit/config
       hash: md5
-      md5: c6f2c0e4a18242374a3ceeb749c57ba3.dir
-      size: 22116
+      md5: d29b11c3334c9788daf09703abde9d55.dir
+      size: 23928
       nfiles: 10
     - path: src/mlkit/data
       hash: md5
-      md5: a25fa99a8d5cda9f4562deeb89a3e2ee.dir
-      size: 58355
+      md5: 9284a2ed29ed3b5654792d63aa75ee4d.dir
+      size: 61924
       nfiles: 14
     - path: src/mlkit/use_cases
       hash: md5
-      md5: 8febb9d54a539dcaf208c5a1a307a9af.dir
-      size: 25348
-      nfiles: 14
+      md5: f29f10d146361c98a2abc52b71a46531.dir
+      size: 25469
+      nfiles: 10
     - path: uv.lock
       hash: md5
-      md5: cd6bc6fd3e2ded12beb53a28cc385952
-      size: 404969
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
     params:
       params.yaml:
         split:
@@ -166,103 +167,103 @@ stages:
           end_date: '2026-06-30'
         use_case: churn
     outs:
-    - path: data/splits/oot-26Q2.json
+    - path: data/churn/splits/oot-26Q2.json
       hash: md5
       md5: b0b48a55077d82fb39e11ff5db747dd2
       size: 203
-    - path: data/splits/oot-26Q2_test.parquet
+    - path: data/churn/splits/oot-26Q2_test.parquet
       hash: md5
-      md5: 5eb17d417aab55bfe31d674a2316a4ac
-      size: 394426
-    - path: data/splits/oot-26Q2_train.parquet
+      md5: 6058ab7ca0ad8081de6470a6bdf03f05
+      size: 394428
+    - path: data/churn/splits/oot-26Q2_train.parquet
       hash: md5
-      md5: d30618f93e7a30ef29f16f62841dbdd5
-      size: 1966768
+      md5: b18267702aacdbbd5719ca8b3a2653c3
+      size: 1966770
   train_model:
-    cmd: uv run mlkit train --use_case churn --config lr.yaml --split_name
-      oot-26Q2 --calibration_method isotonic --n_jobs 16 --tune-model true
-      --register-model true --promote-model true
+    cmd: DATA_DIR=$PWD/data/churn uv run mlkit train --use_case churn --config
+      dc.yaml --split_name oot-26Q2 --calibration_method isotonic --n_jobs 16
+      --tune-model false --register-model true --promote-model true
     deps:
-    - path: data/splits/oot-26Q2.json
+    - path: data/churn/splits/oot-26Q2.json
       hash: md5
       md5: b0b48a55077d82fb39e11ff5db747dd2
       size: 203
-    - path: data/splits/oot-26Q2_test.parquet
+    - path: data/churn/splits/oot-26Q2_test.parquet
       hash: md5
-      md5: 5eb17d417aab55bfe31d674a2316a4ac
-      size: 394426
-    - path: data/splits/oot-26Q2_train.parquet
+      md5: 6058ab7ca0ad8081de6470a6bdf03f05
+      size: 394428
+    - path: data/churn/splits/oot-26Q2_train.parquet
       hash: md5
-      md5: d30618f93e7a30ef29f16f62841dbdd5
-      size: 1966768
+      md5: b18267702aacdbbd5719ca8b3a2653c3
+      size: 1966770
     - path: pyproject.toml
       hash: md5
-      md5: b534eebaaaed94e3c8bae26fd1beec7c
-      size: 1818
-    - path: src/config/lr.yaml
+      md5: 482eaa400aa30d9c0c57f2e06efd3115
+      size: 2055
+    - path: src/config/dc.yaml
       hash: md5
-      md5: 28030c315869cbd42d18ff2850e9742b
-      size: 468
+      md5: 72899713f0222c2778c06e8406427645
+      size: 382
     - path: src/mlkit
       hash: md5
-      md5: 371cbb32f39275a365764e8cdb7f67dd.dir
-      size: 533714
-      nfiles: 104
+      md5: ccb42af0cf734e5adaf616ed4e7e0b60.dir
+      size: 544336
+      nfiles: 100
     - path: uv.lock
       hash: md5
-      md5: cd6bc6fd3e2ded12beb53a28cc385952
-      size: 404969
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
     params:
       params.yaml:
         calibration.method: isotonic
-        model.classifier: lr
+        model.classifier: dc
         model.promote_model: true
         model.register_model: true
         split.name: oot-26Q2
         training.n_jobs: 16
-        training.tune_model: true
+        training.tune_model: false
         use_case: churn
     outs:
-    - path: data/manifests
+    - path: data/churn/manifests
       hash: md5
-      md5: a73243ede89a8730247363e668579f22.dir
-      size: 11803
-      nfiles: 4
+      md5: 66d00a7363ab52bdee2c231d3ad44ca7.dir
+      size: 6135
+      nfiles: 2
   batch_predict_oot:
-    cmd: uv run mlkit batch-predict --use_case churn --input_dataset
-      splits/oot-26Q2_test.parquet --output_dataset
-      predictions/churn_lr_oot-26Q2 --model_manifest
-      manifests/churn-lr-oot-26Q2.json
+    cmd: DATA_DIR=$PWD/data/churn uv run mlkit batch-predict --use_case churn
+      --input_dataset splits/oot-26Q2_test.parquet --output_dataset
+      predictions/churn_dc_oot-26Q2 --model_manifest
+      manifests/churn-dc-oot-26Q2.json
     deps:
-    - path: data/manifests/churn-lr-oot-26Q2.json
+    - path: data/churn/manifests/churn-dc-oot-26Q2.json
       hash: md5
-      md5: d26b7c935cde719adc4fbd84cb0eac3e
-      size: 3114
-    - path: data/splits/oot-26Q2_test.parquet
+      md5: 4bc71c7c83f27d8181ce178e27ad33f1
+      size: 3017
+    - path: data/churn/splits/oot-26Q2_test.parquet
       hash: md5
-      md5: 5eb17d417aab55bfe31d674a2316a4ac
-      size: 394426
+      md5: 6058ab7ca0ad8081de6470a6bdf03f05
+      size: 394428
     - path: pyproject.toml
       hash: md5
-      md5: b534eebaaaed94e3c8bae26fd1beec7c
-      size: 1818
+      md5: 482eaa400aa30d9c0c57f2e06efd3115
+      size: 2055
     - path: src/mlkit
       hash: md5
-      md5: 371cbb32f39275a365764e8cdb7f67dd.dir
-      size: 533714
-      nfiles: 104
+      md5: ccb42af0cf734e5adaf616ed4e7e0b60.dir
+      size: 544336
+      nfiles: 100
     - path: uv.lock
       hash: md5
-      md5: cd6bc6fd3e2ded12beb53a28cc385952
-      size: 404969
+      md5: 5365c06c6ce8d6a1b5d92020ff008862
+      size: 403146
     params:
       params.yaml:
-        model.classifier: lr
+        model.classifier: dc
         split.name: oot-26Q2
         use_case: churn
     outs:
-    - path: data/predictions
+    - path: data/churn/predictions
       hash: md5
-      md5: 1dd8d2e0f109fafc77cb43caae22188b.dir
-      size: 1828910
-      nfiles: 12
+      md5: c44d9ae5232e09e946d428ce405601e2.dir
+      size: 950754
+      nfiles: 6

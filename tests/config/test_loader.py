@@ -50,6 +50,10 @@ def test_shipped_training_configs_have_valid_settings(
 
     assert "use_case" not in raw_config
     assert "registry" not in raw_config
+    assert raw_config["random_state"] == config.random_state
+    assert "selection_data" not in raw_config["threshold"]
+    assert "random_state" not in raw_config["threshold"]
+    assert "random_state" not in raw_config.get("tuning", {})
     assert config.tuning.n_trials >= 1
     assert config.calibration.n_splits >= 2
     assert sum(config.promotion.metric_weights.values()) > 0
@@ -65,3 +69,14 @@ def test_promotion_config_rejects_negative_min_delta() -> None:
 def test_threshold_config_rejects_unsupported_strategy() -> None:
     with pytest.raises(ValueError, match="threshold strategy"):
         ThresholdConfig(strategy="youden")
+
+
+@pytest.mark.unit
+def test_training_rejects_classifier_seed_in_model_params(
+    sample_config_yaml: Path,
+) -> None:
+    raw = yaml.safe_load(sample_config_yaml.read_text())
+    raw["model"]["classifier_params"]["random_state"] = 3
+    sample_config_yaml.write_text(yaml.safe_dump(raw))
+    with pytest.raises(ValueError, match="seed_overrides.classifier"):
+        load_config(sample_config_yaml.name, sample_config_yaml.parent)

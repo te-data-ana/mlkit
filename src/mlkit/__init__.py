@@ -5,12 +5,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .config import RuntimeSettings, ServingSettings, configure_logging
+from .config.seeds import parse_seed, parse_seed_override, resolve_seed
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["main"]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def _parse_boolean(value: str) -> bool:
@@ -75,37 +76,105 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--timestamp_column",
         type=str,
         default=None,
-        help="Timestamp column used for partitioning (defaults to the use_case time column).",
+        help="Timestamp column used for partitioning (defaults to the use-case event time column).",
+    )
+    prepare_parser.add_argument(
+        "--deduplicate",
+        action="store_true",
+        help="Remove exact duplicate source rows after validation.",
+    )
+
+    uci_parser = subparsers.add_parser(
+        "fetch-and-prepare-uci",
+        help="Fetch and prepare a UCI dataset snapshot.",
+    )
+    uci_parser.add_argument(
+        "--dataset-id",
+        type=int,
+        required=True,
+        help="UCI Machine Learning Repository dataset ID.",
+    )
+    uci_parser.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=True,
+        help="Directory for the fetched feature, target, and metadata files.",
+    )
+    uci_parser.add_argument(
+        "--output-path",
+        type=Path,
+        required=True,
+        help="Destination Parquet file for the combined features and targets.",
+    )
+    uci_parser.add_argument(
+        "--use_case",
+        help="Optional registered use case for validating the prepared data.",
+    )
+    uci_parser.add_argument(
+        "--deduplicate",
+        action="store_true",
+        help="Remove exact duplicate source rows after validation and target mapping.",
+    )
+    uci_parser.add_argument(
+        "--map-target",
+        nargs=3,
+        action="append",
+        default=[],
+        metavar=("TARGET", "SOURCE_JSON", "RESULT_JSON"),
+        help=(
+            "Map a value in a normalized target column using non-null JSON scalars; "
+            "repeat for every source value."
+        ),
     )
 
     split_parser = subparsers.add_parser(
         "create-split",
-        help="Create train and test datasets using an out-of-time split.",
+        help="Create datasets using the use-case split strategy.",
     )
     split_parser.add_argument("--use_case", required=True)
     split_parser.add_argument(
         "--dataset_name",
-        required=True,
-        help="Partitioned dataset name.",
+        help="Partitioned dataset name for a temporal split.",
     )
     split_parser.add_argument(
-        "--timestamp_column",
+        "--input_parquet",
+        help="Parquet file for a random split (relative to the data directory).",
+    )
+    split_parser.add_argument(
+        "--random_state",
+        type=parse_seed,
         default=None,
-        help="Timestamp column used for splitting (defaults to the use_case time column).",
+        help="Random split seed (default: 42).",
+    )
+    split_parser.add_argument(
+        "--split_random_state",
+        type=parse_seed_override,
+        help="Split seed override, or 'inherit' to use the root seed.",
+    )
+    split_parser.add_argument(
+        "--validation_fraction",
+        type=float,
+        default=0.1,
+        help="Fraction of records for threshold validation (default: 0.1).",
+    )
+    split_parser.add_argument(
+        "--test_fraction",
+        type=float,
+        default=0.1,
+        help="Fraction of records for testing (default: 0.1).",
+    )
+    split_parser.add_argument(
+        "--monitoring_fraction",
+        type=float,
+        default=0.1,
+        help="Fraction of records for monitoring (default: 0.1; zero disables it).",
     )
     split_parser.add_argument(
         "--start_date",
-        required=True,
         help="Inclusive extraction start date.",
     )
     split_parser.add_argument(
-        "--split_date",
-        required=True,
-        help="First date belonging to the test split.",
-    )
-    split_parser.add_argument(
         "--end_date",
-        required=True,
         help="Inclusive extraction end date.",
     )
     split_parser.add_argument(
@@ -130,6 +199,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--split_name",
         default="default",
         help="Name prefix of prepared train/test Parquet files in data/splits.",
+    )
+    train_parser.add_argument(
+        "--random_state",
+        type=parse_seed,
+        help="Root random seed overriding the training config.",
+    )
+    train_parser.add_argument(
+        "--training_random_state",
+        type=parse_seed_override,
+        help="Tuning and CV seed override, or 'inherit'.",
+    )
+    train_parser.add_argument(
+        "--classifier_random_state",
+        type=parse_seed_override,
+        help="Classifier seed override, or 'inherit'.",
     )
     train_parser.add_argument(
         "--calibration_method",
@@ -205,7 +289,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     batch_parser = subparsers.add_parser(
         "batch-predict",
-        help="Generate batch predictions from CSV or partitioned data.",
+        help="Generate batch predictions from CSV or Parquet data.",
     )
     batch_input = batch_parser.add_mutually_exclusive_group(required=True)
     batch_input.add_argument(
@@ -214,7 +298,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     batch_input.add_argument(
         "--input_dataset",
-        help="Name of partitioned input dataset under configured data directory.",
+        help="Parquet file or dataset under the configured data directory.",
     )
     batch_parser.add_argument(
         "--output_csv",
@@ -224,7 +308,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--output_dataset",
         type=str,
         default="batch_predictions",
-        help="Name of ouput dataset under configured data directory.",
+        help="Name of output dataset under the configured data directory.",
     )
     batch_parser.add_argument(
         "--index_col",
@@ -246,7 +330,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--timestamp_column",
         type=str,
         default=None,
-        help="Timestamp column for partitioned input/output (defaults to the use_case time column).",
+        help="Timestamp column for partitioned input/output (defaults to the use-case time column).",
     )
     batch_parser.add_argument("--use_case", required=True)
     batch_parser.add_argument(
@@ -320,7 +404,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--timestamp_column",
         type=str,
         default=None,
-        help="Timestamp column used for partitioning (defaults to the use_case time column).",
+        help="Timestamp column used for partitioning (defaults to the use-case event time column).",
     )
 
     ingest_error_log_parser = subparsers.add_parser(
@@ -338,7 +422,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--timestamp_column",
         type=str,
         default=None,
-        help="Timestamp column used for partitioning (defaults to the use_case time column).",
+        help="Timestamp column used for partitioning (defaults to the use-case event time column).",
     )
 
     monitor_parser = subparsers.add_parser(
@@ -395,7 +479,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=None,
         help=(
             "Timestamp/partition column for datasets. Defaults to the selected "
-            "use_case time column."
+            "use-case event time column."
         ),
     )
     monitor_parser.add_argument(
@@ -466,19 +550,44 @@ def main(argv: Sequence[str] | None = None) -> None:
     else:
         settings = RuntimeSettings()
 
+    if args.command == "fetch-and-prepare-uci":
+        from .data.uci import (
+            fetch_uci_snapshot,
+            parse_target_mappings,
+            prepare_uci_snapshot,
+        )
+        from .use_cases import get_use_case
+
+        try:
+            target_mappings = parse_target_mappings(args.map_target)
+        except ValueError as exc:
+            uci_parser.error(str(exc))
+        use_case = get_use_case(args.use_case) if args.use_case else None
+        fetch_uci_snapshot(args.dataset_id, args.snapshot_dir)
+        prepare_uci_snapshot(
+            args.snapshot_dir,
+            args.output_path,
+            target_mappings=target_mappings,
+            use_case=use_case,
+            deduplicate=args.deduplicate,
+        )
+        return
+
     if args.command == "prepare-data":
         from .data import load_raw_data, validate_data
-        from .data.storage import write_partitioned_dataset
+        from .data.deduplication import deduplicate_prepared_data
+        from .data.storage import write_parquet_dataset
         from .use_cases import get_use_case
 
         use_case = get_use_case(args.use_case)
         df = load_raw_data(file_name=args.input_csv, data_dir=settings.data_dir / "raw")
-        df = validate_data(df=df, use_case=use_case)
+        validated = validate_data(df=df, use_case=use_case)
+        df = deduplicate_prepared_data(df, validated) if args.deduplicate else validated
 
-        write_partitioned_dataset(
+        write_parquet_dataset(
             df=df,
             dataset_name="partitioned",
-            timestamp_column=args.timestamp_column or use_case.time_column,
+            timestamp_column=args.timestamp_column or use_case.event_time_column,
             overwrite_partitions=True,
             settings=settings,
         )
@@ -486,21 +595,30 @@ def main(argv: Sequence[str] | None = None) -> None:
         return
 
     if args.command == "create-split":
-        from .data.splitting import create_time_based_split
+        from .data.splitting import create_split
         from .use_cases import get_use_case
 
-        split_metadata = create_time_based_split(
-            dataset_name=args.dataset_name,
-            timestamp_column=args.timestamp_column
-            or get_use_case(args.use_case).time_column,
-            start_date=args.start_date,
-            split_date=args.split_date,
-            end_date=args.end_date,
-            split_name=args.split_name,
-            settings=settings,
-        )
-
-        logger.info("OOT train/test split created with: %s", split_metadata)
+        use_case = get_use_case(args.use_case)
+        try:
+            split_metadata = create_split(
+                use_case=use_case,
+                dataset_name=args.dataset_name,
+                input_parquet=args.input_parquet,
+                split_name=args.split_name,
+                start_date=args.start_date,
+                end_date=args.end_date,
+                validation_fraction=args.validation_fraction,
+                test_fraction=args.test_fraction,
+                monitoring_fraction=args.monitoring_fraction,
+                random_state=resolve_seed(
+                    args.random_state if args.random_state is not None else 42,
+                    args.split_random_state,
+                ),
+                settings=settings,
+            )
+        except ValueError as exc:
+            split_parser.error(str(exc))
+        logger.info("Split created with metadata: %s", split_metadata)
 
         return
 
@@ -517,6 +635,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             register_model=args.register_model,
             promote_model=args.promote_model,
             settings=settings,
+            random_state=args.random_state,
+            training_random_state=args.training_random_state,
+            classifier_random_state=args.classifier_random_state,
         )
         logger.info(
             "Successfully trained %s model: AUC=%.4f",
@@ -546,18 +667,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         if (args.model_name is None) != (args.model_version is None):
             parser.error("--model_name and --model_version must be provided together.")
 
+        from .batch_predict import run_batch_prediction
+        from .use_cases import get_use_case
+
+        use_case = get_use_case(args.use_case)
+        timestamp_column = args.timestamp_column or use_case.time_column
+        if (
+            not is_csv_input
+            and timestamp_column is None
+            and args.start_date is not None
+        ):
+            parser.error("Date bounds require a timestamp column.")
+
         manifest = None
         if args.model_manifest is not None:
             from .tracking import TrainingManifest
 
             model_manifest_file = settings.data_dir / args.model_manifest
             manifest = TrainingManifest.read(model_manifest_file)
-
-        from .batch_predict import run_batch_prediction
-        from .use_cases import get_use_case
-
-        use_case = get_use_case(args.use_case)
-        timestamp_column = args.timestamp_column or use_case.time_column
 
         if is_csv_input:
             from .data import load_raw_data
@@ -583,11 +710,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             logger.info("Batch prediction output written to '%s'.", output_path)
         else:
             from .data.storage import (
-                read_partitioned_dataset,
-                write_partitioned_dataset,
+                read_parquet_dataset,
+                write_parquet_dataset,
             )
 
-            df = read_partitioned_dataset(
+            df = read_parquet_dataset(
                 dataset_name=args.input_dataset,
                 timestamp_column=timestamp_column,
                 start=args.start_date,
@@ -602,7 +729,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 manifest=manifest,
                 settings=settings,
             )
-            write_partitioned_dataset(
+            write_parquet_dataset(
                 df=df_pred,
                 dataset_name=args.output_dataset,
                 timestamp_column=timestamp_column,
@@ -610,7 +737,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 settings=settings,
             )
             logger.info(
-                "Partitioned batch prediction written to '%s'.",
+                "Batch prediction dataset written to '%s'.",
                 args.output_dataset,
             )
         return
@@ -662,7 +789,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         ingest_prediction_logs(
             dataset_name=args.dataset_name,
             timestamp_column=args.timestamp_column
-            or get_use_case(args.use_case).time_column,
+            or get_use_case(args.use_case).event_time_column,
             settings=settings,
         )
         return
@@ -674,7 +801,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         ingest_error_logs(
             dataset_name=args.dataset_name,
             timestamp_column=args.timestamp_column
-            or get_use_case(args.use_case).time_column,
+            or get_use_case(args.use_case).event_time_column,
             settings=settings,
         )
         return
@@ -725,24 +852,27 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         output_dir = args.output_dir or settings.output_dir
         if dataset_mode:
-            from .data import read_partitioned_dataset
+            from .data import read_parquet_dataset
             from .monitoring.core import build_monitoring_report
 
             source_reference = args.source_reference or "batch"
             source_analysis = args.source_analysis or "api"
-            dataset_timestamp_column = args.timestamp_column or use_case.time_column
-            reference = read_partitioned_dataset(
+            reference_timestamp_column = args.timestamp_column or use_case.time_column
+            dataset_timestamp_column = (
+                args.timestamp_column or use_case.event_time_column
+            )
+            reference = read_parquet_dataset(
                 dataset_name=args.reference_dataset,
-                timestamp_column=dataset_timestamp_column,
+                timestamp_column=reference_timestamp_column,
                 settings=settings,
             )
-            analysis = read_partitioned_dataset(
+            analysis = read_parquet_dataset(
                 dataset_name=args.analysis_dataset,
                 timestamp_column=dataset_timestamp_column,
                 settings=settings,
             )
             errors = (
-                read_partitioned_dataset(
+                read_parquet_dataset(
                     dataset_name=args.error_dataset,
                     timestamp_column=dataset_timestamp_column,
                     settings=settings,
@@ -750,13 +880,20 @@ def main(argv: Sequence[str] | None = None) -> None:
                 if args.error_dataset is not None
                 else None
             )
-            if dataset_timestamp_column != use_case.time_column:
-                for df in (reference, analysis, errors):
-                    if df is not None and use_case.time_column not in df.columns:
-                        df.rename(
-                            columns={dataset_timestamp_column: use_case.time_column},
-                            inplace=True,
-                        )
+            for df, time_column in (
+                (reference, reference_timestamp_column),
+                (analysis, dataset_timestamp_column),
+                (errors, dataset_timestamp_column),
+            ):
+                if (
+                    df is not None
+                    and time_column is not None
+                    and time_column != use_case.event_time_column
+                    and use_case.event_time_column not in df.columns
+                ):
+                    df.rename(
+                        columns={time_column: use_case.event_time_column}, inplace=True
+                    )
             report_kwargs: dict[str, object] = {
                 "reference": reference,
                 "analysis": analysis,

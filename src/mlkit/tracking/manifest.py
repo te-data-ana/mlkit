@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -100,9 +101,9 @@ class ManifestData:
     """Target, time, and split information used for training."""
 
     target_column: str
-    time_column: str
+    time_column: str | None
     split_name: str
-    split_metadata: dict[str, str | int]
+    split_metadata: dict[str, str | int | float]
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ class TrainingManifest:
     training: ManifestTraining
     evaluation: ManifestEvaluation
     lifecycle: ManifestLifecycle
-    schema_version: int = 3
+    schema_version: int = 4
 
     def write(self, path: Path) -> None:
         """Write the manifest as formatted JSON.
@@ -265,7 +266,7 @@ class TrainingManifest:
             raise TypeError(
                 f"Training manifest '{path}' has an invalid schema_version."
             )
-        if payload["schema_version"] != 3:
+        if payload["schema_version"] != 4:
             raise ValueError(
                 f"Training manifest '{path}' uses unsupported schema_version "
                 f"{payload['schema_version']}."
@@ -353,7 +354,6 @@ class TrainingManifest:
             (model, "use_case"),
             (model, "name"),
             (data, "target_column"),
-            (data, "time_column"),
             (split, "name"),
             (classifier, "name"),
             (classifier, "alias"),
@@ -363,6 +363,8 @@ class TrainingManifest:
         )
         if not all(isinstance(obj[key], str) for obj, key in text_fields):
             raise TypeError(f"Training manifest '{path}' has invalid text fields.")
+        if data["time_column"] is not None and not isinstance(data["time_column"], str):
+            raise TypeError(f"Training manifest '{path}' has invalid data.time_column.")
 
         if type(features["count"]) is not int:
             raise TypeError(
@@ -413,7 +415,9 @@ class TrainingManifest:
             ) from exc
 
         if not all(
-            isinstance(value, (str, int)) and not isinstance(value, bool)
+            isinstance(value, (str, int, float))
+            and not isinstance(value, bool)
+            and (not isinstance(value, float) or math.isfinite(value))
             for value in split["metadata"].values()
         ):
             raise TypeError(

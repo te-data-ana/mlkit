@@ -29,7 +29,9 @@ from mlkit.tracking.manifest import (
     ManifestTraining,
     TrainingManifest,
 )
-from mlkit.use_cases import CHURN_USE_CASE
+from mlkit.use_cases import get_use_case
+
+CHURN_USE_CASE = get_use_case("churn")
 
 
 @pytest.fixture
@@ -65,12 +67,14 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 time_column="reference_date",
                 split_name="oot_26q1",
                 split_metadata={
-                    "train_rows": 100,
-                    "test_rows": 25,
-                    "train_start": "2025-01-01T00:00:00",
-                    "train_end": "2025-12-31T00:00:00",
-                    "test_start": "2026-01-01T00:00:00",
-                    "test_end": "2026-03-31T00:00:00",
+                    "split_strategy": "temporal",
+                    "split_fit_rows": 80,
+                    "split_validation_rows": 20,
+                    "split_test_rows": 25,
+                    "split_fit_start": "2025-01-01T00:00:00",
+                    "split_fit_end": "2025-12-31T00:00:00",
+                    "split_test_start": "2026-01-01T00:00:00",
+                    "split_test_end": "2026-03-31T00:00:00",
                 },
             ),
             training=ManifestTraining(
@@ -83,7 +87,7 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 n_jobs=1,
                 calibration="none",
                 threshold_strategy="max_f1",
-                threshold_data="out_of_time_test",
+                threshold_data="training_validation",
                 threshold=0.5,
             ),
             evaluation=ManifestEvaluation(metrics=vars(evaluation)),
@@ -108,9 +112,7 @@ def config_factory() -> Callable[..., TrainingConfig]:
             ),
             model=ClassifierConfig(
                 classifier="lr",
-                classifier_params={
-                    "random_state": 42,
-                },
+                classifier_params={},
             ),
             calibration=CalibrationConfig(),
             threshold=ThresholdConfig(),
@@ -285,7 +287,7 @@ def generated_training_df() -> pd.DataFrame:
             ],
             "Churn": [1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
         },
-        index=pd.Index(range(1001, 1013), name="customerid"),
+        index=pd.Index(range(1001, 1013), name="customer_id"),
     )
 
 
@@ -293,7 +295,7 @@ def generated_training_df() -> pd.DataFrame:
 def generated_training_csv(tmp_path: Path, generated_training_df: pd.DataFrame) -> Path:
     """Write generated training data to a temporary CSV file."""
     path = tmp_path / "training.csv"
-    generated_training_df.to_csv(path)
+    generated_training_df.rename_axis("CustomerID").to_csv(path)
     return path
 
 
@@ -303,7 +305,7 @@ def generated_inference_csv(
 ) -> Path:
     """Write generated inference data to a temporary CSV file."""
     path = tmp_path / "inference.csv"
-    generated_training_df.drop(columns=["Churn"]).to_csv(path)
+    generated_training_df.drop(columns=["Churn"]).rename_axis("CustomerID").to_csv(path)
     return path
 
 
@@ -325,13 +327,15 @@ def sample_config_yaml(mlflow_test_setup: dict[str, Any]) -> Path:
     config_path.write_text(
         yaml.safe_dump(
             {
+                "random_state": 26,
+                "seed_overrides": {"classifier": 42},
+                "model": {
+                    "classifier": "lr",
+                    "classifier_params": {},
+                },
                 "preprocessing": {
                     "numeric_impute_strategy": "median",
                     "categorical_impute_strategy": "most_frequent",
-                },
-                "model": {
-                    "classifier": "lr",
-                    "classifier_params": {"random_state": 42},
                 },
                 "calibration": {
                     "n_splits": 3,
@@ -384,21 +388,19 @@ def registered_model(
 
     split_name = "integration"
 
-    df = generated_training_df.copy().reset_index(drop=True)
+    df = pd.concat([generated_training_df] * 10, ignore_index=True)
+    df.columns = splitting.normalize_strings(df.columns)
     df["reference_date"] = pd.date_range("2026-01-01", periods=len(df))
 
-    storage.write_partitioned_dataset(
+    storage.write_parquet_dataset(
         df=df,
         dataset_name="integration",
         timestamp_column="reference_date",
     )
 
-    _ = splitting.create_time_based_split(
-        dataset_name="integration",
-        timestamp_column="reference_date",
-        start_date="2026-01-01",
-        split_date="2026-01-06",
-        end_date="2026-01-10",
+    _ = splitting.create_data_splits(
+        use_case=CHURN_USE_CASE,
+        df=df,
         split_name=split_name,
     )
 

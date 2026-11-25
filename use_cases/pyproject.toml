@@ -1,0 +1,22 @@
+[project]
+name = "mlkit-use-cases"
+version = "0.2.0"
+description = "Use-case-specific contracts and feature implementations for mlkit."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mlkit",
+]
+
+[project.entry-points."mlkit.use_cases"]
+churn = "use_cases.churn:CHURN_USE_CASE"
+phishing = "use_cases.phishing:PHISHING_USE_CASE"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "use_cases"
+
+[tool.uv.sources]
+mlkit = { workspace = true }

@@ -2,7 +2,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import GenericAlias
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pandas as pd
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, create_model
@@ -27,26 +27,42 @@ class UseCase:
 
     name: str
     target_column: str
-    time_column: str
+    time_column: str | None
     feature_schema: type[BaseModel]
     feature_builder_factory: Callable[[], BaseEstimator]
+    split_strategy: Literal["temporal", "stratified_random"] = "temporal"
     index_column: str | None = None
     metadata_fields: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("Use-case name must not be empty.")
-        if not self.target_column or not self.time_column:
-            raise ValueError("Use-case target and time columns must not be empty.")
-        if self.target_column == self.time_column:
+        if not self.target_column:
+            raise ValueError("Use-case target column must not be empty.")
+        if self.split_strategy not in {"temporal", "stratified_random"}:
+            raise ValueError(
+                "Use-case split strategy must be temporal or stratified_random."
+            )
+        if self.time_column is not None and (
+            not isinstance(self.time_column, str) or not self.time_column
+        ):
+            raise ValueError("Use-case time column must be nonempty text or None.")
+        if self.split_strategy == "temporal" and self.time_column is None:
+            raise ValueError("Temporal use cases require a nonempty time column.")
+        if self.target_column == self.event_time_column:
             raise ValueError("Use-case target and time columns must be distinct.")
         if not self.feature_columns:
             raise ValueError("Use-case feature schema must not be empty.")
-        if {self.target_column, self.time_column}.intersection(self.feature_columns):
+        if {self.target_column, self.event_time_column}.intersection(
+            self.feature_columns
+        ):
             raise ValueError(
                 "Use-case feature_columns must not include target or time columns."
             )
-        reserved = set(self.feature_columns) | {self.target_column, self.time_column}
+        reserved = set(self.feature_columns) | {
+            self.target_column,
+            self.event_time_column,
+        }
         if reserved.intersection(self.metadata_fields):
             raise ValueError(
                 "Metadata fields must not overlap features, target or time."
@@ -56,6 +72,11 @@ class UseCase:
     def feature_columns(self) -> tuple[str, ...]:
         """Return the feature names in schema order."""
         return tuple(self.feature_schema.model_fields)
+
+    @property
+    def event_time_column(self) -> str:
+        """Return the timestamp field used for serving and monitoring events."""
+        return self.time_column if self.time_column is not None else "timestamp"
 
     def validate(self, df: pd.DataFrame) -> pd.DataFrame:
         """Validate features and present metadata, filtering unknown columns.
@@ -107,7 +128,7 @@ class UseCase:
         """Create a schema for the metadata columns present in a DataFrame."""
         metadata_types = {
             self.target_column: Annotated[int, Field(ge=0, le=1)],
-            self.time_column: datetime,
+            self.event_time_column: datetime,
             **self.metadata_fields,
         }
         return create_model(

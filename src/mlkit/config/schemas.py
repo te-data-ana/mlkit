@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any
 
+from mlkit.config.seeds import resolve_seed, validate_seed
+
 
 @dataclass
 class ClassifierConfig:
@@ -27,7 +29,6 @@ class TuningConfig:
     n_trials: int = 50
     n_splits: int = 4
     metric: str = "roc_auc"
-    random_state: int = 26
 
 
 @dataclass
@@ -100,10 +101,43 @@ class PromotionConfig:
 
 
 @dataclass(frozen=True)
+class TrainingSeedOverrides:
+    """Optional independent seeds for training components."""
+
+    training: int | None = None
+    classifier: int | None = None
+
+    def __post_init__(self) -> None:
+        for seed in (self.training, self.classifier):
+            if seed is not None:
+                validate_seed(seed)
+
+
+@dataclass(frozen=True)
 class TrainingConfig:
     model: ClassifierConfig
+    random_state: int = 26
+    seed_overrides: TrainingSeedOverrides = field(default_factory=TrainingSeedOverrides)
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     tuning: TuningConfig = field(default_factory=TuningConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     threshold: ThresholdConfig = field(default_factory=ThresholdConfig)
     promotion: PromotionConfig = field(default_factory=PromotionConfig)
+
+    def __post_init__(self) -> None:
+        validate_seed(self.random_state)
+        if "random_state" in self.model.classifier_params:
+            raise ValueError(
+                "Set classifier randomness using seed_overrides.classifier, "
+                "not classifier_params.random_state."
+            )
+
+    @property
+    def training_seed(self) -> int:
+        """Return the effective tuning and cross-validation seed."""
+        return resolve_seed(self.random_state, self.seed_overrides.training)
+
+    @property
+    def classifier_seed(self) -> int:
+        """Return the effective classifier seed."""
+        return resolve_seed(self.random_state, self.seed_overrides.classifier)

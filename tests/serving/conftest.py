@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from use_cases.churn.schema import ChurnInputFeatures
 
 from mlkit.serving import api
 from mlkit.serving.model_loader import LoadedModel, ModelMetadata
@@ -16,7 +17,6 @@ from mlkit.serving.schemas import (
     PredictionEvent,
 )
 from mlkit.use_cases import get_use_case
-from mlkit.use_cases.churn.schema import ChurnInputFeatures
 
 
 @pytest.fixture

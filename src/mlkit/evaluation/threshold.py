@@ -2,7 +2,6 @@
 
 import numpy as np
 from numpy.typing import ArrayLike
-from sklearn.metrics import f1_score
 
 
 def select_f1_threshold(
@@ -37,16 +36,15 @@ def select_f1_threshold(
         raise ValueError("Threshold probabilities must be finite values in [0, 1].")
 
     thresholds = np.unique(np.concatenate(([0.0], prob_array, [1.0])))
-    scores = np.asarray(
-        [
-            f1_score(
-                label_array,
-                prob_array >= threshold,
-                zero_division=0,
-            )
-            for threshold in thresholds
-        ]
-    )
-    best_score = float(scores.max())
-    best_threshold = float(thresholds[scores == best_score][-1])
+    order = np.argsort(prob_array)
+    sorted_probs = prob_array[order]
+    positives = np.asarray(label_array[order] == 1, dtype=np.int64)
+    suffix_positives = np.concatenate((np.cumsum(positives[::-1])[::-1], [0]))
+    indices = np.searchsorted(sorted_probs, thresholds, side="left")
+    true_positives = suffix_positives[indices]
+    actual_positives = positives.sum()
+    predicted_positives = len(order) - indices
+    f1_scores = 2 * true_positives / (actual_positives + predicted_positives)
+    best_score = float(f1_scores.max())
+    best_threshold = float(thresholds[f1_scores == best_score][-1])
     return best_threshold

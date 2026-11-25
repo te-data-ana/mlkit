@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,6 +34,19 @@ ALTERNATE_USE_CASE = UseCase(
 )
 
 
+def test_split_strategy_contract_validates_time_and_event_metadata() -> None:
+    random_case = replace(
+        ALTERNATE_USE_CASE, time_column=None, split_strategy="stratified_random"
+    )
+    data = _alternate_df(2).drop(columns="event_date")
+    data["timestamp"] = pd.date_range("2026-01-01", periods=2)
+    assert "timestamp" in random_case.validate(data).columns
+    with pytest.raises(ValueError, match="require a nonempty time column"):
+        replace(ALTERNATE_USE_CASE, time_column=None)
+    with pytest.raises(ValueError, match="split strategy"):
+        replace(ALTERNATE_USE_CASE, split_strategy="invalid")
+
+
 def _alternate_df(rows: int = 12) -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -56,7 +70,8 @@ def test_alternate_use_case_runs_training_batch_api_and_monitoring(
     result = train_model(
         use_case=ALTERNATE_USE_CASE,
         config=config,
-        train_df=df.iloc[:8],
+        fit_df=df.iloc[:6],
+        validation_df=df.iloc[6:8],
         test_df=df.iloc[8:],
     )
     assert result.feature_names_in == list(ALTERNATE_USE_CASE.feature_columns)
