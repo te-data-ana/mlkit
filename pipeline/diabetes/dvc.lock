@@ -1,0 +1,196 @@
+schema: '2.0'
+stages:
+  fetch_and_prepare_uci:
+    cmd: uv run --extra datasets mlkit fetch-and-prepare-uci --dataset-id 891
+      --snapshot-dir data/diabetes/raw/uci --output-path
+      data/diabetes/prepared.parquet --use_case diabetes
+    deps:
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        dataset_id: 891
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/prepared.parquet
+      hash: md5
+      md5: 21fdadc28f257dd7a4aa6c2cc312f5fa
+      size: 2704761
+    - path: data/diabetes/raw/uci
+      hash: md5
+      md5: 2eaa60595a8786f39db78017e8a4a4ba.dir
+      size: 2714583
+      nfiles: 5
+  create_split:
+    cmd: DATA_DIR=$PWD/data/diabetes uv run mlkit create-split --use_case
+      diabetes --input_parquet prepared.parquet --split_name oos-42
+      --random_state 42 --split_random_state inherit --validation_fraction 0.1
+      --test_fraction 0.1 --monitoring_fraction 0.1
+    deps:
+    - path: data/diabetes/prepared.parquet
+      hash: md5
+      md5: 21fdadc28f257dd7a4aa6c2cc312f5fa
+      size: 2704761
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        random_state: 42
+        seeds.split: inherit
+        split:
+          name: oos-42
+          validation_fraction: 0.1
+          test_fraction: 0.1
+          monitoring_fraction: 0.1
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/splits
+      hash: md5
+      md5: 6910e85201fd9299a368bb6585dae777.dir
+      size: 3085916
+      nfiles: 5
+  train_model:
+    cmd: DATA_DIR=$PWD/data/diabetes uv run mlkit train --use_case diabetes
+      --config lr.yaml --random_state 42 --training_random_state inherit
+      --classifier_random_state inherit --split_name oos-42 --calibration_method
+      isotonic --n_jobs 16 --tune-model true --register-model true
+      --promote-model true
+    deps:
+    - path: data/diabetes/splits
+      hash: md5
+      md5: 6910e85201fd9299a368bb6585dae777.dir
+      size: 3085916
+      nfiles: 5
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/config/lr.yaml
+      hash: md5
+      md5: 8fd6042056de78cc015afe6f52eb480b
+      size: 446
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        calibration.method: isotonic
+        model:
+          classifier: lr
+          register_model: true
+          promote_model: true
+        random_state: 42
+        seeds.classifier: inherit
+        seeds.training: inherit
+        split.name: oos-42
+        training.n_jobs: 16
+        training.tune_model: true
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/manifests
+      hash: md5
+      md5: 153d8654fdbab235c32a6f2061cc26da.dir
+      size: 3974
+      nfiles: 1
+  batch_predict:
+    cmd: DATA_DIR=$PWD/data/diabetes uv run mlkit batch-predict --use_case
+      diabetes --input_dataset splits/oos-42_test.parquet --output_dataset
+      predictions/diabetes_lr_oos-42 --model_manifest
+      manifests/diabetes-lr-oos-42.json
+    deps:
+    - path: data/diabetes/manifests/diabetes-lr-oos-42.json
+      hash: md5
+      md5: 84c4bb6cf6eccec50908bd1b681b4442
+      size: 3974
+    - path: data/diabetes/splits/oos-42_test.parquet
+      hash: md5
+      md5: 396fb6e6352aec3ca25472dda448d7fe
+      size: 324408
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        model.classifier: lr
+        split.name: oos-42
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/predictions
+      hash: md5
+      md5: 2b437901d9d50d038863a0a876d24e32.dir
+      size: 371729
+      nfiles: 1

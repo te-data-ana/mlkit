@@ -20,7 +20,7 @@ def test_uci_snapshot_preserves_dataframes_and_metadata(
     features = pd.DataFrame({"Feature": [1, 2]})
     targets = pd.DataFrame({"target": [0, 1]})
     dataset = SimpleNamespace(
-        data=SimpleNamespace(features=features, targets=targets),
+        data=SimpleNamespace(features=features, targets=targets, ids=None),
         metadata={"uci_id": 967},
         variables=pd.DataFrame({"name": ["Feature", "target"]}),
     )
@@ -45,6 +45,7 @@ def test_uci_snapshot_rejects_unaligned_frames(
         data=SimpleNamespace(
             features=pd.DataFrame({"x": [1]}, index=[1]),
             targets=pd.DataFrame({"y": [1]}, index=[2]),
+            ids=None,
         )
     )
     monkeypatch.setitem(
@@ -52,6 +53,58 @@ def test_uci_snapshot_rejects_unaligned_frames(
     )
     with pytest.raises(ValueError, match="aligned"):
         fetch_uci_snapshot(dataset_id=967, snapshot_dir=tmp_path)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ids",
+    [
+        pd.DataFrame({"ID": [1]}, index=[1]),
+        pd.DataFrame({"ID": [1, 2]}, index=[1, 2]),
+        pd.DataFrame([[1, 2], [3, 4]], columns=["ID", "ID"]),
+        "invalid",
+    ],
+)
+def test_uci_snapshot_rejects_invalid_ids(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ids: object
+) -> None:
+    dataset = SimpleNamespace(
+        data=SimpleNamespace(
+            features=pd.DataFrame({"x": [1, 2]}),
+            targets=pd.DataFrame({"y": [0, 1]}),
+            ids=ids,
+        )
+    )
+    monkeypatch.setitem(
+        sys.modules, "ucimlrepo", SimpleNamespace(fetch_ucirepo=lambda **_: dataset)
+    )
+    with pytest.raises(ValueError, match="identifier"):
+        fetch_uci_snapshot(dataset_id=891, snapshot_dir=tmp_path)
+    assert not (tmp_path / "features.parquet").exists()
+
+
+@pytest.mark.unit
+def test_uci_snapshot_replaces_stale_ids(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ids = pd.DataFrame({"ID": [1, 2]})
+    dataset = SimpleNamespace(
+        data=SimpleNamespace(
+            features=pd.DataFrame({"x": [1, 2]}),
+            targets=pd.DataFrame({"y": [0, 1]}),
+            ids=ids,
+        ),
+        metadata={},
+        variables=pd.DataFrame({"name": ["ID", "x", "y"]}),
+    )
+    monkeypatch.setitem(
+        sys.modules, "ucimlrepo", SimpleNamespace(fetch_ucirepo=lambda **_: dataset)
+    )
+    fetch_uci_snapshot(891, tmp_path)
+    pd.testing.assert_frame_equal(pd.read_parquet(tmp_path / "ids.parquet"), ids)
+    dataset.data.ids = None
+    fetch_uci_snapshot(891, tmp_path)
+    assert not (tmp_path / "ids.parquet").exists()
 
 
 def _write_snapshot(
@@ -82,6 +135,58 @@ def test_prepare_uci_preserves_multiple_arbitrary_targets(tmp_path: Path) -> Non
         }
     )
     pd.testing.assert_frame_equal(result, expected)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("with_use_case", [False, True])
+def test_prepare_uci_deduplicates_using_ids(
+    tmp_path: Path, with_use_case: bool
+) -> None:
+    class Features(BaseModel):
+        value: int
+
+    use_case = UseCase(
+        name="example",
+        target_column="label",
+        time_column=None,
+        split_strategy="stratified_random",
+        feature_schema=Features,
+        feature_builder_factory=IdentityFeatureBuilder,
+    )
+    _write_snapshot(
+        tmp_path, pd.DataFrame({"Value": [5, 5, 5]}), pd.DataFrame({"Label": [1, 1, 1]})
+    )
+    pd.DataFrame({"ID": [10, 11, 10]}).to_parquet(tmp_path / "ids.parquet")
+    output = tmp_path / "prepared.parquet"
+    prepare_uci_snapshot(
+        tmp_path, output, use_case=use_case if with_use_case else None, deduplicate=True
+    )
+    expected = {"value": [5, 5], "label": [1, 1]}
+    if not with_use_case:
+        expected["id"] = [10, 11]
+    assert pd.read_parquet(output).to_dict("list") == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("ids", "error"),
+    [
+        ({"ID": [1]}, "aligned"),
+        ({"IDValue": [1, 2], "ID Value": [3, 4]}, "unique"),
+        ({"Value": [1, 2]}, "overlap"),
+        ({"Label": [1, 2]}, "overlap"),
+    ],
+)
+def test_prepare_uci_rejects_invalid_ids(
+    tmp_path: Path, ids: dict[str, list[int]], error: str
+) -> None:
+    _write_snapshot(
+        tmp_path, pd.DataFrame({"Value": [5, 6]}), pd.DataFrame({"Label": [0, 1]})
+    )
+    pd.DataFrame(ids).to_parquet(tmp_path / "ids.parquet")
+    with pytest.raises(ValueError, match=error):
+        prepare_uci_snapshot(tmp_path, tmp_path / "prepared.parquet")
+    assert not (tmp_path / "prepared.parquet").exists()
 
 
 @pytest.mark.unit
@@ -260,6 +365,7 @@ def test_uci_cli_fetches_then_prepares_with_mapping(
         data=SimpleNamespace(
             features=pd.DataFrame({"Value": [1, 2]}),
             targets=pd.DataFrame({"Label": ["yes", "no"]}),
+            ids=None,
         ),
         metadata={"uci_id": 967},
         variables=pd.DataFrame({"name": ["Value", "Label"]}),

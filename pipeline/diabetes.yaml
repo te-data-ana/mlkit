@@ -1,0 +1,36 @@
+use_case: diabetes
+dataset_id: 891
+random_state: 42
+
+seeds:
+  preparation: inherit
+  split: inherit
+  training: inherit
+  classifier: inherit
+  monitoring: inherit
+
+split:
+  name: oos-42
+  validation_fraction: 0.1
+  test_fraction: 0.1
+  monitoring_fraction: 0.1
+
+model:
+  classifier: lr
+  register_model: true
+  promote_model: true
+
+training:
+  n_jobs: 16
+  tune_model: true
+
+calibration:
+  method: isotonic
+
+monitoring:
+  sample_date: '2024-02-01'
+  reference_dataset: predictions
+  analysis_dataset: api_predictions
+  error_dataset: api_errors
+  source_reference: batch
+  source_analysis: api

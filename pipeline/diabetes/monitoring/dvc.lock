@@ -1,0 +1,204 @@
+schema: '2.0'
+stages:
+  serve_samples:
+    cmd: DATA_DIR=$PWD/data/diabetes LOGGING_DIR=$PWD/data/diabetes/api_logs
+      LOG_FEATURES=True uv run python -m mlkit.serving.serve_samples --use_case
+      diabetes --input_parquet splits/oos-42_monitoring.parquet --model_manifest
+      manifests/diabetes-lr-oos-42.json --sample_size 1000 --random_state 42
+      --monitoring_random_state inherit --timestamp 2024-02-01 --drop_columns
+      diabetes_binary
+    deps:
+    - path: data/diabetes/manifests/diabetes-lr-oos-42.json
+      hash: md5
+      md5: 84c4bb6cf6eccec50908bd1b681b4442
+      size: 3974
+    - path: data/diabetes/splits/oos-42_monitoring.parquet
+      hash: md5
+      md5: 16e9bfe76d7c924a952cbe953eea0a60
+      size: 323821
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        model.classifier: lr
+        monitoring.sample_date: '2024-02-01'
+        random_state: 42
+        seeds.monitoring: inherit
+        split.name: oos-42
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/api_logs
+      hash: md5
+      md5: 08d8f7515d6c46823fc137bbb56b8908.dir
+      size: 642591
+      nfiles: 1
+  ingest_error_logs:
+    cmd: DATA_DIR=$PWD/data/diabetes LOGGING_DIR=$PWD/data/diabetes/api_logs uv
+      run mlkit ingest-error-logs --use_case diabetes --dataset_name api_errors
+    deps:
+    - path: data/diabetes/api_logs
+      hash: md5
+      md5: 08d8f7515d6c46823fc137bbb56b8908.dir
+      size: 642591
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit/data
+      hash: md5
+      md5: f594825d0a1492c3c85f8a5c596cfb24.dir
+      size: 46031
+      nfiles: 9
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        monitoring.error_dataset: api_errors
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+  ingest_prediction_logs:
+    cmd: DATA_DIR=$PWD/data/diabetes LOGGING_DIR=$PWD/data/diabetes/api_logs uv
+      run mlkit ingest-prediction-logs --use_case diabetes --dataset_name
+      api_predictions
+    deps:
+    - path: data/diabetes/api_logs
+      hash: md5
+      md5: 08d8f7515d6c46823fc137bbb56b8908.dir
+      size: 642591
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        monitoring.analysis_dataset: api_predictions
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/api_predictions
+      hash: md5
+      md5: ee549cfac3c12bdb3151a7508ac36a33.dir
+      size: 68820
+      nfiles: 1
+  monitor:
+    cmd: DATA_DIR=$PWD/data/diabetes uv run mlkit monitor --use_case diabetes
+      --reference_dataset predictions/diabetes_lr_oos-42 --analysis_dataset
+      api_predictions --error_dataset api_errors --source_reference batch
+      --source_analysis api --model_manifest manifests/diabetes-lr-oos-42.json
+      --output_dir data/diabetes/monitoring/diabetes_lr_oos-42
+      --mlflow_experiment_name diabetes-monitoring --run_name diabetes_lr_oos-42
+    deps:
+    - path: data/diabetes/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: data/diabetes/api_predictions
+      hash: md5
+      md5: ee549cfac3c12bdb3151a7508ac36a33.dir
+      size: 68820
+      nfiles: 1
+    - path: data/diabetes/manifests/diabetes-lr-oos-42.json
+      hash: md5
+      md5: 84c4bb6cf6eccec50908bd1b681b4442
+      size: 3974
+    - path: data/diabetes/predictions/diabetes_lr_oos-42
+      hash: md5
+      md5: 64a01b5f79ad204cc6de33c6b18920ef.dir
+      size: 371729
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: 5b978f1eba94a400c7e72c6d40689092
+      size: 567
+    - path: use_cases/src/use_cases/diabetes
+      hash: md5
+      md5: c561f866783e9af6d341b4fa5e823290.dir
+      size: 2440
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/diabetes.yaml:
+        model.classifier: lr
+        monitoring:
+          sample_date: '2024-02-01'
+          reference_dataset: predictions
+          analysis_dataset: api_predictions
+          error_dataset: api_errors
+          source_reference: batch
+          source_analysis: api
+        split.name: oos-42
+        use_case: diabetes
+    outs:
+    - path: data/diabetes/monitoring/diabetes_lr_oos-42
+      hash: md5
+      md5: 7873a3003d88aba16ddf507627d0a766.dir
+      size: 615
+      nfiles: 1

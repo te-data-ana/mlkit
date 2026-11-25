@@ -19,14 +19,14 @@ Scalar = str | int | float | bool
 
 
 def fetch_uci_snapshot(dataset_id: int, snapshot_dir: Path) -> None:
-    """Fetch and persist a UCI dataset's feature, target and metadata tables.
+    """Fetch and persist a UCI dataset's feature, target, ID and metadata tables.
 
     Args:
         dataset_id: UCI repository dataset identifier.
         snapshot_dir: Directory receiving the snapshot files.
 
     Raises:
-        ValueError: If the returned feature and target tables are not aligned.
+        ValueError: If the returned data tables are invalid or not aligned.
     """
     from ucimlrepo import fetch_ucirepo
 
@@ -44,9 +44,22 @@ def fetch_uci_snapshot(dataset_id: int, snapshot_dir: Path) -> None:
         raise ValueError(
             "UCI features and targets must be nonempty aligned DataFrames."
         )
+    ids = dataset.data.ids
+    if ids is not None and (
+        not isinstance(ids, pd.DataFrame)
+        or ids.empty
+        or not ids.index.equals(features.index)
+        or not ids.columns.is_unique
+    ):
+        raise ValueError("UCI identifiers must be a nonempty aligned DataFrame.")
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     features.to_parquet(snapshot_dir / "features.parquet", index=False)
     targets.to_parquet(snapshot_dir / "targets.parquet", index=False)
+    ids_path = snapshot_dir / "ids.parquet"
+    if ids is None:
+        ids_path.unlink(missing_ok=True)
+    else:
+        ids.to_parquet(ids_path, index=False)
     (snapshot_dir / "metadata.json").write_text(
         json.dumps(dataset.metadata, indent=2, default=str) + "\n", encoding="utf-8"
     )
@@ -68,7 +81,7 @@ def prepare_uci_snapshot(
     optionally mapping targets and validating it.
 
     Args:
-        snapshot_dir: Directory containing the saved feature and target tables.
+        snapshot_dir: Directory containing feature, target and optional ID tables.
         output_path: Destination Parquet file.
         target_mappings: Explicit value mappings keyed by normalized target name.
         use_case: Optional single-binary-target contract for validation.
@@ -79,21 +92,25 @@ def prepare_uci_snapshot(
     """
     features = pd.read_parquet(snapshot_dir / "features.parquet")
     targets = pd.read_parquet(snapshot_dir / "targets.parquet")
+    ids_path = snapshot_dir / "ids.parquet"
+    ids = pd.read_parquet(ids_path) if ids_path.exists() else None
     if features.empty or targets.empty or len(features) != len(targets):
         raise ValueError("UCI features and targets must be nonempty and aligned.")
-    if not all(isinstance(name, str) for name in (*features.columns, *targets.columns)):
-        raise ValueError("UCI feature and target column names must be strings.")
-    features.columns = normalize_strings(features.columns)
-    targets.columns = normalize_strings(targets.columns)
-    if not features.columns.is_unique or not targets.columns.is_unique:
-        raise ValueError("Normalized UCI feature and target names must be unique.")
-    if set(features.columns).intersection(targets.columns):
-        raise ValueError("UCI feature and target names must not overlap.")
+    if ids is not None and (ids.empty or len(ids) != len(features)):
+        raise ValueError("UCI identifiers must be nonempty and aligned.")
+    tables = [features, *([ids] if ids is not None else []), targets]
+    for table in tables:
+        if not all(isinstance(name, str) for name in table.columns):
+            raise ValueError("UCI column names must be strings.")
+        table.columns = normalize_strings(table.columns)
+        if not table.columns.is_unique:
+            raise ValueError("Normalized UCI column names must be unique.")
+    column_names = [name for table in tables for name in table.columns]
+    if len(set(column_names)) != len(column_names):
+        raise ValueError("UCI feature, identifier and target names must not overlap.")
 
     source = (
-        pd.concat(
-            [features.reset_index(drop=True), targets.reset_index(drop=True)], axis=1
-        )
+        pd.concat([table.reset_index(drop=True) for table in tables], axis=1)
         if deduplicate
         else None
     )
@@ -118,9 +135,7 @@ def prepare_uci_snapshot(
         target = targets[use_case.target_column]
         if target.isna().any() or not target.isin([0, 1]).all():
             raise ValueError("Use-case target labels must be 0 or 1.")
-    frame = pd.concat(
-        [features.reset_index(drop=True), targets.reset_index(drop=True)], axis=1
-    )
+    frame = pd.concat([table.reset_index(drop=True) for table in tables], axis=1)
     if use_case is not None:
         frame = use_case.validate(df=frame)
     if source is not None:

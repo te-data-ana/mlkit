@@ -138,7 +138,7 @@ uv run dvc repro pipeline/churn/dvc.yaml
 uv run dvc status
 ```
 
-Both the churn and phishing parameter presets specify a root `random_state` and
+The churn, diabetes and phishing parameter presets specify a root `random_state` and
 five component overrides:
 
 ```yaml
@@ -257,10 +257,12 @@ probabilities or similarity scores and may contain information from the dataset
 construction process. The UCI labels are inverted: `1` means phishing and `0`
 means legitimate, so positive-class probabilities and metrics refer to phishing.
 
-UCI snapshot preparation is shared across datasets. It normalizes feature and
-target names and retains all columns by default, including multiple or
-non-binary targets. Supply `--use_case` to validate and filter with an existing
-single-binary-target contract. To map target values, `--map-target` accepts a
+UCI snapshot preparation is shared across datasets. It saves UCI identifier
+columns separately when available, normalizes identifier, feature and target
+names, and retains all columns by default, including multiple or non-binary
+targets. Snapshots without identifiers remain supported. Supply `--use_case`
+to validate and filter with an existing single-binary-target contract. To map
+target values, `--map-target` accepts a
 normalized target name and JSON scalar source and result values; repeat for
 every value mapping. The phishing pipeline explicitly uses
 `--map-target label 0 1 --map-target label 1 0`.
@@ -280,11 +282,11 @@ For string labels, quote JSON strings in the shell, for example
 snapshot each time it runs. The separate DVC `create_split` stage reuses the
 prepared Parquet output when only split parameters change.
 
-The optional `--deduplicate` flag removes duplicate source feature-and-target
-rows from the prepared output, but not from the saved snapshot. Comparison
-occurs before target mapping and use-case filtering; rows that become identical
-only after these transformations are retained. The DataFrame index is ignored,
-and the first occurrence is kept.
+The optional `--deduplicate` flag removes duplicate source identifier,
+feature-and-target rows from the prepared output, but not from the saved
+snapshot. Comparison occurs before target mapping and use-case filtering; rows
+that become identical only after these transformations are retained. The
+DataFrame index is ignored, and the first occurrence is kept.
 
 ```bash
 uv run dvc repro pipeline/phishing/dvc.yaml
@@ -321,6 +323,44 @@ Dataset attribution: Prasad, A. and Chandra, S. (2024),
 [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset),
 licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
 [associated paper](https://doi.org/10.1016/j.cose.2023.103545).
+
+### CDC diabetes workflow
+
+The [diabetes pipeline](pipeline/diabetes/dvc.yaml) uses the shared UCI
+snapshot preparation with dataset 891. The 21 input fields include binary
+indicators, BMI, unhealthy-day counts, and ordered general-health, age,
+education and income codes. The last four are validated as integer codes and
+one-hot encoded by the model; binary indicators remain numeric. UCI's `id` is
+preserved as integer metadata and used as an index for sample serving, not as a
+model input. The `diabetes_binary` target is not remapped: `0` means no diabetes
+and `1` means prediabetes or diabetes. This is a workflow demonstration, not
+a clinical diagnostic tool.
+
+The [diabetes parameters](pipeline/diabetes.yaml) configure a stratified random
+split, training and monitoring. The separate monitoring pipeline simulates API
+traffic, requires model registration and at least 1,000 monitoring rows, and
+uses test predictions as its reference. Its dtype-based drift analysis treats
+the four raw integer category codes as numerical, unlike model preprocessing.
+The simulation logs input features locally; the data and logs contain health
+and demographic information and should be protected appropriately. See the
+[data layout](data/diabetes/README.md).
+
+```bash
+uv run dvc repro pipeline/diabetes/dvc.yaml
+uv run dvc repro pipeline/diabetes/monitoring/dvc.yaml
+```
+
+These commands download the dataset, train and register a model, and create
+local data, tracking artifacts and DVC lockfiles. To refresh the UCI snapshot,
+force `pipeline/diabetes/dvc.yaml:fetch_and_prepare_uci` and reproduce the
+downstream stages again. Refresh older snapshots to obtain IDs for sample
+serving. DVC cannot detect upstream dataset changes.
+
+Dataset attribution: *CDC Diabetes Health Indicators* (2017),
+[UCI Machine Learning Repository](https://doi.org/10.24432/C53919).
+UCI directs users to the
+[original dataset](https://www.kaggle.com/datasets/alexteboul/diabetes-health-indicators-dataset)
+for licensing and acknowledgment terms.
 
 ### Train and evaluate a model
 
@@ -632,7 +672,7 @@ well as optional feature-engineering (`feature_builder_factory`),
 column names to Pydantic-compatible types. Shared training, batch prediction,
 API, and monitoring code consumes this data contract.
 
-The `mlkit-use-cases` workspace package exposes churn and phishing use cases
+The `mlkit-use-cases` workspace package exposes churn, diabetes and phishing use cases
 through `mlkit.use_cases` entry points. `get_use_case()` discovers installed
 entry points and returns the named contract. External use-case packages can use
 the same entry-point group without modifying `mlkit`.
@@ -1067,7 +1107,7 @@ src/mlkit/             Application package
   training/            Training and hyperparameter tuning
 src/config/            YAML training configurations
 use_cases/             Separate use-case workspace package
-  src/use_cases/       Churn, phishing, and other use-case implementations
+  src/use_cases/       Churn, diabetes, phishing, and other use-case implementations
   tests/               Use-case implementation tests
 data/<use_case>/       Per-use-case local data (not stored in Git)
   manifests/           Training manifests

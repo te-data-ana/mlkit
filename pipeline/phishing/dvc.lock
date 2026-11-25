@@ -1,20 +1,20 @@
 schema: '2.0'
 stages:
   fetch_and_prepare_uci:
-    cmd: uv run --group datasets mlkit fetch-and-prepare-uci --dataset-id 967
+    cmd: uv run --extra datasets mlkit fetch-and-prepare-uci --dataset-id 967
       --snapshot-dir data/phishing/raw/uci --output-path
       data/phishing/prepared.parquet --use_case phishing --map-target label 0 1
       --map-target label 1 0
     deps:
     - path: pyproject.toml
       hash: md5
-      md5: bcf7b99bc93b018a7410201884f931c5
-      size: 2100
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
     - path: src/mlkit
       hash: md5
-      md5: 1e637922fc28acd06c493296b1d0c901.dir
-      size: 278970
-      nfiles: 49
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
     - path: use_cases/src/use_cases/phishing
       hash: md5
       md5: 42be3e70e8397b2640877660e64e2c99.dir
@@ -22,8 +22,8 @@ stages:
       nfiles: 2
     - path: uv.lock
       hash: md5
-      md5: 5365c06c6ce8d6a1b5d92020ff008862
-      size: 403146
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
     params:
       pipeline/phishing.yaml:
         dataset_id: 967
@@ -41,7 +41,8 @@ stages:
   create_split:
     cmd: DATA_DIR=$PWD/data/phishing uv run mlkit create-split --use_case
       phishing --input_parquet prepared.parquet --split_name oos-42
-      --random_state 42 --test_fraction 0.1 --monitoring_fraction 0.1
+      --random_state 42 --split_random_state inherit --validation_fraction 0.1
+      --test_fraction 0.1 --monitoring_fraction 0.1
     deps:
     - path: data/phishing/prepared.parquet
       hash: md5
@@ -49,13 +50,13 @@ stages:
       size: 5270414
     - path: pyproject.toml
       hash: md5
-      md5: bcf7b99bc93b018a7410201884f931c5
-      size: 2100
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
     - path: src/mlkit
       hash: md5
-      md5: 1e637922fc28acd06c493296b1d0c901.dir
-      size: 278970
-      nfiles: 49
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
     - path: use_cases/src/use_cases/phishing
       hash: md5
       md5: 42be3e70e8397b2640877660e64e2c99.dir
@@ -63,45 +64,49 @@ stages:
       nfiles: 2
     - path: uv.lock
       hash: md5
-      md5: 5365c06c6ce8d6a1b5d92020ff008862
-      size: 403146
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
     params:
       pipeline/phishing.yaml:
+        random_state: 42
+        seeds.split: inherit
         split:
           name: oos-42
-          random_state: 42
+          validation_fraction: 0.1
           test_fraction: 0.1
           monitoring_fraction: 0.1
         use_case: phishing
     outs:
     - path: data/phishing/splits
       hash: md5
-      md5: 0d348e40a6e71c85543fcc1b7ea9dd9e.dir
-      size: 5405499
-      nfiles: 4
+      md5: c7d0a3272fd5de6af815e0971761aea5.dir
+      size: 5466978
+      nfiles: 5
   train_model:
     cmd: DATA_DIR=$PWD/data/phishing uv run mlkit train --use_case phishing
-      --config lr.yaml --split_name oos-42 --calibration_method isotonic
-      --n_jobs 16 --tune-model true --register-model true --promote-model true
+      --config lr.yaml --random_state 42 --training_random_state inherit
+      --classifier_random_state inherit --split_name oos-42 --calibration_method
+      isotonic --n_jobs 16 --tune-model true --register-model true
+      --promote-model true
     deps:
     - path: data/phishing/splits
       hash: md5
-      md5: 0d348e40a6e71c85543fcc1b7ea9dd9e.dir
-      size: 5405499
-      nfiles: 4
+      md5: c7d0a3272fd5de6af815e0971761aea5.dir
+      size: 5466978
+      nfiles: 5
     - path: pyproject.toml
       hash: md5
-      md5: bcf7b99bc93b018a7410201884f931c5
-      size: 2100
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
     - path: src/config/lr.yaml
       hash: md5
-      md5: b91fdb6bf9c88ec767632f5ecfa85b13
-      size: 494
+      md5: 8fd6042056de78cc015afe6f52eb480b
+      size: 446
     - path: src/mlkit
       hash: md5
-      md5: 1e637922fc28acd06c493296b1d0c901.dir
-      size: 278970
-      nfiles: 49
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
     - path: use_cases/src/use_cases/phishing
       hash: md5
       md5: 42be3e70e8397b2640877660e64e2c99.dir
@@ -109,8 +114,8 @@ stages:
       nfiles: 2
     - path: uv.lock
       hash: md5
-      md5: 5365c06c6ce8d6a1b5d92020ff008862
-      size: 403146
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
     params:
       pipeline/phishing.yaml:
         calibration.method: isotonic
@@ -118,6 +123,9 @@ stages:
           classifier: lr
           register_model: true
           promote_model: true
+        random_state: 42
+        seeds.classifier: inherit
+        seeds.training: inherit
         split.name: oos-42
         training.n_jobs: 16
         training.tune_model: true
@@ -125,8 +133,8 @@ stages:
     outs:
     - path: data/phishing/manifests
       hash: md5
-      md5: 74faa0ae49cf8c9267e7b5fa36daa50c.dir
-      size: 13741
+      md5: 1c11e3640b6c82858969dd778ac83c4d.dir
+      size: 14094
       nfiles: 3
   batch_predict:
     cmd: DATA_DIR=$PWD/data/phishing uv run mlkit batch-predict --use_case
@@ -136,21 +144,21 @@ stages:
     deps:
     - path: data/phishing/manifests/phishing-lr-oos-42.json
       hash: md5
-      md5: 7a787be7f059b76b2786e60b3d46421c
-      size: 4737
+      md5: ba580595bda0ec5411b826e6099a0344
+      size: 5090
     - path: data/phishing/splits/oos-42_test.parquet
       hash: md5
-      md5: db35fa569cacacf355d737806146c658
-      size: 586262
+      md5: e40d814d812a340f37279fc5db3db828
+      size: 587236
     - path: pyproject.toml
       hash: md5
-      md5: bcf7b99bc93b018a7410201884f931c5
-      size: 2100
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
     - path: src/mlkit
       hash: md5
-      md5: 1e637922fc28acd06c493296b1d0c901.dir
-      size: 278970
-      nfiles: 49
+      md5: 5a4361d6835da5d18114c4681a462be7.dir
+      size: 284153
+      nfiles: 51
     - path: use_cases/src/use_cases/phishing
       hash: md5
       md5: 42be3e70e8397b2640877660e64e2c99.dir
@@ -158,8 +166,8 @@ stages:
       nfiles: 2
     - path: uv.lock
       hash: md5
-      md5: 5365c06c6ce8d6a1b5d92020ff008862
-      size: 403146
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
     params:
       pipeline/phishing.yaml:
         model.classifier: lr
@@ -168,6 +176,6 @@ stages:
     outs:
     - path: data/phishing/predictions
       hash: md5
-      md5: 904649cc4bff469ef83f25732e63b60c.dir
-      size: 1812165
+      md5: f64b8f4bda354c6d13b06391b3a05255.dir
+      size: 1812883
       nfiles: 3
