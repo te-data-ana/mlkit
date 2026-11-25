@@ -5,12 +5,14 @@ from unittest.mock import ANY, Mock
 
 import pandas as pd
 import pytest
+from sklearn.pipeline import Pipeline
 
 import mlkit
 from mlkit import batch_predict, data
 from mlkit.data import storage
 from mlkit.tracking.manifest import TrainingManifest
 from mlkit.tracking.registry import ModelRegistry
+from mlkit.training import TrainingResult
 from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
@@ -520,8 +522,16 @@ def test_batch_predict_cli_rejects_invalid_arguments(
 @pytest.mark.integration
 def test_batch_prediction_uses_registered_model(
     generated_inference_csv: Path,
-    registered_model: dict[str, str | Path],
+    registered_model: dict[str, object],
 ) -> None:
+    result = registered_model["result"]
+    assert isinstance(result, TrainingResult)
+    assert isinstance(result.trained_pipeline, Pipeline)
+    assert result.feature_names_in and result.feature_names_out
+    for metric in ("roc_auc", "accuracy", "brier_score"):
+        assert 0 <= result.metrics[metric] <= 1
+    assert result.metrics["fit_time_sec"] >= 0
+
     input_df = data.load_raw_data(
         file_name=generated_inference_csv.name,
         index_col="customer_id",

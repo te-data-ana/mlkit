@@ -1,16 +1,14 @@
 import json
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
-from mlkit.data.jsonl_logs import jsonl_log_to_csv, read_jsonl_log
+from mlkit.data.jsonl_logs import read_jsonl_log
 
 
 @pytest.mark.unit
-def test_jsonl_log_to_csv(tmp_path: Path) -> None:
+def test_read_jsonl_log_flattens_features(tmp_path: Path) -> None:
     jsonl_path = tmp_path / "predictions.jsonl"
-    csv_path = tmp_path / "predictions.csv"
 
     records = [
         {
@@ -33,9 +31,7 @@ def test_jsonl_log_to_csv(tmp_path: Path) -> None:
 
     jsonl_path.write_text("\n".join(json.dumps(record) for record in records))
 
-    jsonl_log_to_csv(jsonl_path, csv_path)
-
-    result = pd.read_csv(csv_path)
+    result = read_jsonl_log(jsonl_path)
 
     assert len(result) == 2
     assert "features" not in result.columns

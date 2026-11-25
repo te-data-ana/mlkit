@@ -1,6 +1,6 @@
 [project]
 name = "mlkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal ML engineering and MLOps toolkit for building reusable machine learning solutions and continuously evolving production-grade practices."
 readme = "README.md"
 license = "MIT"
@@ -79,3 +79,6 @@ markers = [
     "integration: end-to-end workflow tests",
     "usecase: isolated tests for use-cases",
 ]
+
+[tool.coverage.report]
+precision = 2

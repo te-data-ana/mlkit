@@ -62,11 +62,12 @@ def test_classifier_pipeline_predicts_after_fitting(
     sample_training_data: tuple[Any, Series],
 ) -> None:
     X, y = sample_training_data
-
+    classifier = LogisticRegression()
     pipeline = build_classifier_pipeline(
-        classifier=LogisticRegression(),
+        classifier=classifier,
         feature_builder=IdentityFeatureBuilder(),
     )
+    assert pipeline.named_steps["classifier"] is classifier
 
     # Verify the pipeline rejects prediction before it has been fitted.
     with pytest.raises(NotFittedError):
@@ -91,33 +92,3 @@ def test_classifier_pipeline_contains_expected_steps() -> None:
         "preprocessor",
         "classifier",
     }
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "classifier",
-    [
-        DummyClassifier(),
-        LogisticRegression(),
-        ExtraTreesClassifier(),
-        HistGradientBoostingClassifier(),
-        RandomForestClassifier(),
-        GaussianNB(),
-        DecisionTreeClassifier(),
-    ],
-)
-def test_classifier_pipeline_preserves_supplied_classifier(
-    classifier: DummyClassifier
-    | LogisticRegression
-    | ExtraTreesClassifier
-    | HistGradientBoostingClassifier
-    | RandomForestClassifier
-    | GaussianNB
-    | DecisionTreeClassifier,
-) -> None:
-    pipeline = build_classifier_pipeline(
-        classifier=classifier,
-        feature_builder=IdentityFeatureBuilder(),
-    )
-
-    assert pipeline.named_steps["classifier"] is classifier

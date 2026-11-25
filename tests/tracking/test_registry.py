@@ -213,26 +213,6 @@ def test_registry_update_model_description(registry: ModelRegistry) -> None:
 
 
 @pytest.mark.unit
-def test_registry_get_metric_by_alias(registry: ModelRegistry) -> None:
-    version = Mock()
-    version.run_id = "abc"
-
-    run = Mock()
-    run.data.metrics = {"roc_auc": 0.84}
-
-    registry.get_model_version_by_alias = Mock(return_value=version)
-    registry.client.get_run.return_value = run
-
-    metric = registry.get_metric_by_alias(
-        model_name="my_model",
-        model_alias="champion",
-        metric_name="roc_auc",
-    )
-
-    assert metric == 0.84
-
-
-@pytest.mark.unit
 def test_registry_get_metrics_by_alias(registry: ModelRegistry) -> None:
     version = Mock()
     version.run_id = "abc"

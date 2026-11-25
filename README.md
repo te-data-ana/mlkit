@@ -1021,8 +1021,8 @@ uv run ruff format --check .
 
 Install the repository's pre-commit hooks with `uv run pre-commit install`.
 CI installs locked dependencies, runs Ruff lint and format checks, and runs
-the full test suite. Tests generate their own temporary data and isolated
-MLflow state.
+the full test suite with at least 90% statement coverage for `src/mlkit`.
+Tests generate their own temporary data and isolated MLflow state.
 
 ## License compliance
 

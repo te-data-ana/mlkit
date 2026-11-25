@@ -44,6 +44,7 @@ def test_random_split_persists_all_disjoint_cohorts_and_metadata(
     assert set.union(*ids) == set(df["id"])
     assert sum(map(len, ids)) == len(set.union(*ids))
     assert all(set(part["label"]) == {0, 1} for part in parts)
+    assert all(part["label"].mean() == 0.5 for part in parts)
     assert splitting.load_split_metadata(data_dir / "splits/s.json") == metadata
     assert json.loads((data_dir / "splits/s.json").read_text()) == metadata.model_dump(
         exclude_none=True

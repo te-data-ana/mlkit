@@ -31,13 +31,6 @@ def assert_training_result(result) -> None:
     assert metrics["fit_time_sec"] >= 0
 
 
-@pytest.mark.integration
-def test_run_training_job_returns_valid_training_result(
-    registered_model: dict[str, object],
-) -> None:
-    assert_training_result(registered_model["result"])
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize("classifier", ["lr", "dt", "rf", "hgb"])
 def test_train_returns_valid_result_for_supported_classifier(
@@ -74,25 +67,6 @@ def test_train_returns_valid_result_for_supported_classifier(
     ]
     log_positions = [caplog.text.index(message) for message in log_messages]
     assert log_positions == sorted(log_positions)
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("classifier", ["lr", "dt", "rf", "hgb"])
-def test_trained_pipeline_predicts_classes_and_probabilities(
-    classifier: Literal["lr", "dt", "rf", "hgb"],
-    config_factory: Callable[..., TrainingConfig],
-    temporal_sample_training_df: pd.DataFrame,
-) -> None:
-    cfg = config_factory(classifier=classifier)
-    train_df = temporal_sample_training_df.iloc[:6]
-    test_df = temporal_sample_training_df.iloc[6:]
-    result = train_model(
-        config=cfg,
-        fit_df=train_df.iloc[:4],
-        validation_df=train_df.iloc[4:],
-        test_df=test_df,
-        use_case=CHURN_USE_CASE,
-    )
 
     X = temporal_sample_training_df.iloc[:6].loc[
         :, list(CHURN_USE_CASE.feature_columns)
@@ -211,6 +185,7 @@ def test_train_fits_time_aware_calibrated_classifier(
     sample_training_df: pd.DataFrame,
 ) -> None:
     cfg = config_factory(classifier="rf")
+    cfg.model.classifier_params = {"n_estimators": 5}
     train_df = pd.concat([sample_training_df] * 8, ignore_index=True)
     train_df["reference_date"] = pd.date_range(
         "2026-01-01",

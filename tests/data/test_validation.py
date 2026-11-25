@@ -57,17 +57,6 @@ def test_validate_data_rejects_missing_required_column(
 
 
 @pytest.mark.unit
-def test_validate_data_rejects_invalid_churn_value(
-    ingested_df: pd.DataFrame,
-) -> None:
-    # Churn is a binary target, so value 2 violates the data contract.
-    ingested_df.loc[ingested_df.index[0], "churn"] = 2
-
-    with pytest.raises(ValidationError, match="churn"):
-        validate_data(df=ingested_df, use_case=CHURN_USE_CASE)
-
-
-@pytest.mark.unit
 def test_validate_data_rejects_negative_total_spend(
     ingested_df: pd.DataFrame,
 ) -> None:

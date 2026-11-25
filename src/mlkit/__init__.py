@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["main"]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def _parse_boolean(value: str) -> bool:

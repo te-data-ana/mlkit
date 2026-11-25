@@ -4,6 +4,7 @@ from argparse import Namespace
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pandas as pd
@@ -393,6 +394,11 @@ def test_wait_for_api_returns_when_healthy(
 def test_wait_for_api_times_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    clock = iter([0.0, 0.0, 1.0])
+    sleep = Mock()
+    monkeypatch.setattr(
+        serve_samples, "time", SimpleNamespace(time=lambda: next(clock), sleep=sleep)
+    )
     monkeypatch.setattr(
         serve_samples.requests,
         "get",
@@ -405,6 +411,7 @@ def test_wait_for_api_times_out(
             port=8000,
             timeout_seconds=1,
         )
+    sleep.assert_called_once_with(serve_samples.API_HEALTH_CHECK_INTERVAL_SECONDS)
 
 
 @pytest.mark.unit

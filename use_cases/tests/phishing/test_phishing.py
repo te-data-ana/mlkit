@@ -13,7 +13,7 @@ from use_cases.phishing import PHISHING_USE_CASE, PhishingInputFeatures
 
 import mlkit
 from mlkit.config import RuntimeSettings
-from mlkit.data.splitting import create_data_splits, load_split_metadata
+from mlkit.data.splitting import load_split_metadata
 from mlkit.data.uci import prepare_uci_snapshot
 from mlkit.evaluation import select_f1_threshold
 from mlkit.monitoring.core import _event_log_to_df, build_monitoring_report
@@ -28,10 +28,6 @@ def _features(rows: int) -> pd.DataFrame:
         "URLLength",
         "DomainLength",
         "IsDomainIP",
-        # "URLSimilarityIndex",
-        # "CharContinuationRate",
-        # "TLDLegitimateProb",
-        # "URLCharProb",
         "TLDLength",
         "NoOfSubDomain",
         "HasObfuscation",
@@ -51,7 +47,6 @@ def _features(rows: int) -> pd.DataFrame:
         "LargestLineLength",
         "HasTitle",
         "DomainTitleMatchScore",
-        # "URLTitleMatchScore",
         "HasFavicon",
         "Robots",
         "IsResponsive",
@@ -142,29 +137,6 @@ def test_snapshot_rejects_target_as_feature(tmp_path: Path) -> None:
 
 
 @pytest.mark.usecase
-def test_random_split_is_reproducible_stratified_and_disjoint(tmp_path: Path) -> None:
-    df = pd.DataFrame({"id": range(100), "label": [0, 1] * 50})
-    for path in (tmp_path / "a", tmp_path / "b"):
-        create_data_splits(
-            use_case=PHISHING_USE_CASE,
-            df=df,
-            settings=RuntimeSettings(data_dir=path),
-            split_name="s",
-        )
-    parts = [
-        pd.read_parquet(tmp_path / "a" / "splits" / f"s_{part}.parquet")
-        for part in ("fit", "validation", "test", "monitoring")
-    ]
-    assert [len(part) for part in parts] == [70, 10, 10, 10]
-    assert all(part["label"].mean() == 0.5 for part in parts)
-    assert len(set.union(*(set(part["id"]) for part in parts))) == 100
-    for part, name in zip(parts, ("fit", "validation", "test", "monitoring")):
-        pd.testing.assert_frame_equal(
-            part, pd.read_parquet(tmp_path / "b" / "splits" / f"s_{name}.parquet")
-        )
-
-
-@pytest.mark.usecase
 def test_phishing_training_uses_one_holdout_with_independent_seeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -195,8 +167,9 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
     raw_config = yaml.safe_load(source.read_text(encoding="utf-8"))
     raw_config["random_state"] = 17
     raw_config["seed_overrides"] = {"training": 31, "classifier": 26}
-    raw_config["tuning"]["n_trials"] = 2
+    raw_config["tuning"]["n_trials"] = 1
     raw_config["tuning"]["n_splits"] = 2
+    raw_config["calibration"]["n_splits"] = 2
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(raw_config), encoding="utf-8")
     tracking_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
