@@ -118,7 +118,7 @@ def optimize_hyperparameters(
         use_case,
         df=train_df,
         n_splits=tuning.n_splits,
-        random_state=config.random_state,
+        random_state=config.training_seed,
     )
     metric = roc_auc_score if tuning.metric == "roc_auc" else average_precision_score
 
@@ -130,6 +130,7 @@ def optimize_hyperparameters(
                 model_alias=config.model.classifier,
                 model_params=config.model.classifier_params | trial_params,
                 n_jobs=1,
+                random_state=config.classifier_seed,
             )
             pipeline = build_classifier_pipeline(
                 classifier=classifier,
@@ -168,7 +169,7 @@ def optimize_hyperparameters(
     )
     study = optuna.create_study(
         direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=config.random_state),
+        sampler=optuna.samplers.TPESampler(seed=config.training_seed),
     )
     with threadpool_limits(limits=1):
         study.optimize(func=objective, n_trials=tuning.n_trials, n_jobs=n_jobs)

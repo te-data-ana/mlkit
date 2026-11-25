@@ -138,6 +138,35 @@ uv run dvc repro pipeline/churn/dvc.yaml
 uv run dvc status
 ```
 
+Both the churn and phishing parameter presets specify a root `random_state` and
+five component overrides:
+
+```yaml
+random_state: 42
+seeds:
+  preparation: inherit
+  split: inherit
+  training: inherit
+  classifier: inherit
+  monitoring: inherit
+```
+
+Replace `inherit` with an integer to vary a component independently. The
+preparation seed controls synthetic churn reference dates; the split seed
+controls random dataset cohorts; the training seed controls Optuna and random
+CV folds, including calibration; the classifier seed applies to estimators
+supporting `random_state`; and the monitoring seed controls sample simulation.
+Temporal splits and temporal CV do not use a seed. DVC tracks the root and
+relevant override for each stage. For example, keep phishing cohorts fixed
+while varying the other inherited seeds with:
+
+```bash
+uv run dvc exp run --name phishing-new-seed \
+  --set-param pipeline/phishing.yaml:random_state=123 \
+  --set-param pipeline/phishing.yaml:seeds.split=42 \
+  pipeline/phishing/dvc.yaml
+```
+
 The churn monitoring pipeline uses the same parameter preset:
 
 ```bash
@@ -707,8 +736,7 @@ random_state: 26
 
 model:
   classifier: dc
-  classifier_params:
-    random_state: 26
+  classifier_params: {}
 
 preprocessing:
   numeric_impute_strategy: median
@@ -740,9 +768,25 @@ Pass the required use case with `--use_case` in the CLI or `use_case=` in a
 Python training call. The selected contract supplies the target, time, and
 feature columns used by training.
 
-The top-level `random_state` seeds Optuna sampling and random cross-validation
-folds. Classifier `random_state` parameters and dataset-split seeds remain
-independent.
+The training config's `random_state` is the fallback root seed for standalone
+training. The training CLI accepts `--random_state`; Python callers can pass
+`random_state=` to `run_training_job`. Either overrides the config root.
+Optional `seed_overrides.training` and `seed_overrides.classifier` integers in
+the training config override that root for the respective components. The CLI
+options `--training_random_state` and `--classifier_random_state` (or Python
+arguments with the same names) override those component settings. Omitted
+values or CLI `inherit` leave config overrides in place. Configure classifier
+randomness through this mechanism, not `model.classifier_params.random_state`.
+Standalone split, synthetic-date preparation, and monitoring commands accept
+`--random_state` and their respective `--split_random_state`,
+`--preparation_random_state`, and `--monitoring_random_state` override options.
+Seeds must be integers from 0 to 4294967295.
+
+MLflow logs the root and effective training and applicable classifier seeds;
+the actual random split seed remains in split metadata. The logged config
+artifact is the original file, so consult logged parameters for runtime
+overrides. Seeds alone do not ensure identical results across environments;
+parallel Optuna trials can also be nondeterministic.
 
 `--n_jobs` sets the total CPU job budget for a run. It defaults to `1`, accepts
 positive integers, and uses `-1` to request all available CPUs. During tuning,
@@ -773,7 +817,7 @@ The independent validation cohort selects the F1-maximizing threshold
 (`threshold.strategy: max_f1`). Tuning, calibration and final fitting use only
 the fit cohort; the separate test set is used only for evaluation.
 
-Runs log the threshold, validation fraction, source and training seed as MLflow
+Runs log the threshold, validation fraction, source and effective seeds as MLflow
 parameters. The reliability diagram is logged under `calibration/`.
 
 ### Evaluation

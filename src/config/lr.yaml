@@ -3,7 +3,6 @@ random_state: 26
 model:
   classifier: lr
   classifier_params:
-    random_state: 26
     max_iter: 200
 
 preprocessing:

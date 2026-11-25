@@ -194,6 +194,7 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
     source = Path(__file__).resolve().parents[3] / "src/config/lr.yaml"
     raw_config = yaml.safe_load(source.read_text(encoding="utf-8"))
     raw_config["random_state"] = 17
+    raw_config["seed_overrides"] = {"training": 31, "classifier": 26}
     raw_config["tuning"]["n_trials"] = 2
     raw_config["tuning"]["n_splits"] = 2
     config_path = tmp_path / "config.yaml"
@@ -211,6 +212,9 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
         settings=RuntimeSettings(data_dir=tmp_path),
         tune_model=True,
         calibration_method="sigmoid",
+        random_state=19,
+        training_random_state=37,
+        classifier_random_state=29,
     )
 
     fit_df = pd.read_parquet(tmp_path / "splits/s_fit.parquet")
@@ -227,8 +231,10 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
     experiment = client.get_experiment_by_name("phishing-s")
     assert experiment is not None
     run = client.search_runs(experiment_ids=[experiment.experiment_id])[0]
-    assert run.data.params["random_state"] == "26"
-    assert run.data.params["training_random_state"] == "17"
+    assert run.data.params["random_state"] == "29"
+    assert run.data.params["root_random_state"] == "19"
+    assert run.data.params["classifier_random_state"] == "29"
+    assert run.data.params["training_random_state"] == "37"
     assert run.data.params["threshold_data"] == "training_validation"
     assert run.data.params["split_strategy"] == "stratified_random"
     assert run.data.params["split_random_state"] == "7"

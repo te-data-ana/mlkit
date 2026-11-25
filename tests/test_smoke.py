@@ -40,6 +40,12 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
             "alternate",
             "--config",
             "config.yaml",
+            "--random_state",
+            "19",
+            "--training_random_state",
+            "inherit",
+            "--classifier_random_state",
+            "0",
         ]
     )
 
@@ -53,6 +59,9 @@ def test_package_main_dispatches_train_command(monkeypatch) -> None:
         "register_model": False,
         "promote_model": False,
         "settings": ANY,
+        "random_state": 19,
+        "training_random_state": None,
+        "classifier_random_state": 0,
     }
 
 
@@ -567,6 +576,10 @@ def test_package_main_dispatches_create_split(
             "2026-06-30",
             "--split_name",
             "pytest",
+            "--random_state",
+            "19",
+            "--split_random_state",
+            "7",
         ]
     )
 
@@ -577,7 +590,7 @@ def test_package_main_dispatches_create_split(
         "start_date": "2026-01-01",
         "end_date": "2026-06-30",
         "split_name": "pytest",
-        "random_state": 42,
+        "random_state": 7,
         "validation_fraction": 0.1,
         "test_fraction": 0.1,
         "monitoring_fraction": 0.1,

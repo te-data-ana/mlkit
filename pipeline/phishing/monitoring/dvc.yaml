@@ -13,7 +13,8 @@ stages:
       --input_parquet splits/${split.name}_monitoring.parquet
       --model_manifest manifests/${use_case}-${model.classifier}-${split.name}.json
       --sample_size 1000
-      --random_state 42
+      --random_state ${random_state}
+      --monitoring_random_state ${seeds.monitoring}
       --timestamp ${monitoring.sample_date}
       --drop_columns label
     deps:
@@ -29,6 +30,8 @@ stages:
           - split.name
           - model.classifier
           - monitoring.sample_date
+          - random_state
+          - seeds.monitoring
     outs:
       - data/${use_case}/api_logs:
           persist: true

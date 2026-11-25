@@ -32,7 +32,8 @@ stages:
       --use_case ${use_case}
       --input_parquet prepared.parquet
       --split_name ${split.name}
-      --random_state ${split.random_state}
+      --random_state ${random_state}
+      --split_random_state ${seeds.split}
       --validation_fraction ${split.validation_fraction}
       --test_fraction ${split.test_fraction}
       --monitoring_fraction ${split.monitoring_fraction}
@@ -46,6 +47,8 @@ stages:
       - pipeline/phishing.yaml:
           - use_case
           - split
+          - random_state
+          - seeds.split
     outs:
       - data/${use_case}/splits
   train_model:
@@ -55,6 +58,9 @@ stages:
       uv run mlkit train
       --use_case ${use_case}
       --config ${model.classifier}.yaml
+      --random_state ${random_state}
+      --training_random_state ${seeds.training}
+      --classifier_random_state ${seeds.classifier}
       --split_name ${split.name}
       --calibration_method ${calibration.method}
       --n_jobs ${training.n_jobs}
@@ -76,6 +82,9 @@ stages:
           - calibration.method
           - training.n_jobs
           - training.tune_model
+          - random_state
+          - seeds.training
+          - seeds.classifier
     outs:
       - data/${use_case}/manifests:
           persist: true

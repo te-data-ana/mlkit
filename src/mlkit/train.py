@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import subprocess
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import mlflow
@@ -55,6 +55,9 @@ def run_training_job(
     write_manifest: bool = True,
     *,
     settings: RuntimeSettings | None = None,
+    random_state: int | None = None,
+    training_random_state: int | None = None,
+    classifier_random_state: int | None = None,
 ) -> TrainingResult:
     """Run the configured training, tracking, registration, and promotion flow.
 
@@ -77,6 +80,9 @@ def run_training_job(
             (default: True).
         settings: Runtime snapshot used for unspecified directories and
             tracking locations.
+        random_state: Optional root seed overriding the training config.
+        training_random_state: Optional tuning and cross-validation seed.
+        classifier_random_state: Optional classifier seed.
 
     Returns:
         TrainingResult containing the fitted pipeline, metrics, classifier
@@ -134,6 +140,29 @@ def run_training_job(
         config, config_file_path = load_config(
             file=config_file, path=resolved_config_dir
         )
+        if any(
+            seed is not None
+            for seed in (random_state, training_random_state, classifier_random_state)
+        ):
+            config = replace(
+                config,
+                random_state=(
+                    config.random_state if random_state is None else random_state
+                ),
+                seed_overrides=replace(
+                    config.seed_overrides,
+                    training=(
+                        config.seed_overrides.training
+                        if training_random_state is None
+                        else training_random_state
+                    ),
+                    classifier=(
+                        config.seed_overrides.classifier
+                        if classifier_random_state is None
+                        else classifier_random_state
+                    ),
+                ),
+            )
         classifier_alias = config.model.classifier
         threshold_strategy = config.threshold.strategy
         selected_use_case = get_use_case(use_case)

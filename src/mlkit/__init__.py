@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .config import RuntimeSettings, ServingSettings, configure_logging
+from .config.seeds import parse_seed, parse_seed_override, resolve_seed
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +142,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     split_parser.add_argument(
         "--random_state",
-        type=int,
+        type=parse_seed,
         default=None,
         help="Random split seed (default: 42).",
+    )
+    split_parser.add_argument(
+        "--split_random_state",
+        type=parse_seed_override,
+        help="Split seed override, or 'inherit' to use the root seed.",
     )
     split_parser.add_argument(
         "--validation_fraction",
@@ -193,6 +199,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--split_name",
         default="default",
         help="Name prefix of prepared train/test Parquet files in data/splits.",
+    )
+    train_parser.add_argument(
+        "--random_state",
+        type=parse_seed,
+        help="Root random seed overriding the training config.",
+    )
+    train_parser.add_argument(
+        "--training_random_state",
+        type=parse_seed_override,
+        help="Tuning and CV seed override, or 'inherit'.",
+    )
+    train_parser.add_argument(
+        "--classifier_random_state",
+        type=parse_seed_override,
+        help="Classifier seed override, or 'inherit'.",
     )
     train_parser.add_argument(
         "--calibration_method",
@@ -589,7 +610,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                 validation_fraction=args.validation_fraction,
                 test_fraction=args.test_fraction,
                 monitoring_fraction=args.monitoring_fraction,
-                random_state=args.random_state if args.random_state is not None else 42,
+                random_state=resolve_seed(
+                    args.random_state if args.random_state is not None else 42,
+                    args.split_random_state,
+                ),
                 settings=settings,
             )
         except ValueError as exc:
@@ -611,6 +635,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             register_model=args.register_model,
             promote_model=args.promote_model,
             settings=settings,
+            random_state=args.random_state,
+            training_random_state=args.training_random_state,
+            classifier_random_state=args.classifier_random_state,
         )
         logger.info(
             "Successfully trained %s model: AUC=%.4f",

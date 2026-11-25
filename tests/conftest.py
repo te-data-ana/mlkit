@@ -112,9 +112,7 @@ def config_factory() -> Callable[..., TrainingConfig]:
             ),
             model=ClassifierConfig(
                 classifier="lr",
-                classifier_params={
-                    "random_state": 42,
-                },
+                classifier_params={},
             ),
             calibration=CalibrationConfig(),
             threshold=ThresholdConfig(),
@@ -330,9 +328,10 @@ def sample_config_yaml(mlflow_test_setup: dict[str, Any]) -> Path:
         yaml.safe_dump(
             {
                 "random_state": 26,
+                "seed_overrides": {"classifier": 42},
                 "model": {
                     "classifier": "lr",
-                    "classifier_params": {"random_state": 42},
+                    "classifier_params": {},
                 },
                 "preprocessing": {
                     "numeric_impute_strategy": "median",

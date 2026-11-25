@@ -15,9 +15,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC, LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 
-# default model parameters
-DEFAULT_RANDOM_STATE = 26
-
 MODEL_CATALOG = {
     "dc": {
         "clf": DummyClassifier,
@@ -38,7 +35,6 @@ MODEL_CATALOG = {
     "lr": {
         "clf": LogisticRegression,
         "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
             "max_iter": 100,
         },
         "search_space": {
@@ -47,9 +43,7 @@ MODEL_CATALOG = {
     },
     "lsvc": {
         "clf": LinearSVC,
-        "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
-        },
+        "default_params": {},
         "search_space": {
             "C": {"type": "float", "low": 1e-4, "high": 1e2, "log": True},
         },
@@ -57,7 +51,6 @@ MODEL_CATALOG = {
     "svc": {
         "clf": SVC,
         "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
             "kernel": "rbf",
         },
         "search_space": {
@@ -66,9 +59,7 @@ MODEL_CATALOG = {
     },
     "dt": {
         "clf": DecisionTreeClassifier,
-        "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
-        },
+        "default_params": {},
         "search_space": {
             "max_depth": {
                 "type": "categorical",
@@ -80,7 +71,6 @@ MODEL_CATALOG = {
     "ada": {
         "clf": AdaBoostClassifier,
         "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
             "n_estimators": 100,
         },
         "search_space": {
@@ -96,9 +86,7 @@ MODEL_CATALOG = {
     "et": {
         "clf": ExtraTreesClassifier,
         "supports_n_jobs": True,
-        "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
-        },
+        "default_params": {},
         "search_space": {
             "n_estimators": {"type": "int", "low": 50, "high": 500},
             "max_depth": {
@@ -115,9 +103,7 @@ MODEL_CATALOG = {
     "rf": {
         "clf": RandomForestClassifier,
         "supports_n_jobs": True,
-        "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
-        },
+        "default_params": {},
         "search_space": {
             "n_estimators": {"type": "int", "low": 50, "high": 500},
             "max_depth": {
@@ -133,9 +119,7 @@ MODEL_CATALOG = {
     },
     "hgb": {
         "clf": HistGradientBoostingClassifier,
-        "default_params": {
-            "random_state": DEFAULT_RANDOM_STATE,
-        },
+        "default_params": {},
         "search_space": {
             "max_iter": {"type": "int", "low": 50, "high": 500},
             "learning_rate": {

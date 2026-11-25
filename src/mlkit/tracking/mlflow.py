@@ -100,7 +100,13 @@ def log_experiment_result(
     """
     logger.info("Logging training parameters and tags to MLflow.")
     # log all parameters required for reproducibility
-    mlflow.log_params({"training_random_state": config.random_state})
+    seeds = {
+        "root_random_state": config.random_state,
+        "training_random_state": config.training_seed,
+    }
+    if "random_state" in result.classifier_config:
+        seeds["classifier_random_state"] = result.classifier_config["random_state"]
+    mlflow.log_params(seeds)
     # log classifier and its hyper-parameters
     mlflow.log_params(result.classifier_config)
     # log use_case tags

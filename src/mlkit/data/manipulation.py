@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from mlkit.config import RuntimeSettings, configure_logging
+from mlkit.config.seeds import parse_seed, parse_seed_override, resolve_seed
 from mlkit.data.ingestion import load_raw_data
 from mlkit.data.validation import validate_data
 from mlkit.use_cases import UseCase, get_use_case
@@ -58,6 +59,7 @@ def preprocess_raw_data(
     use_case: UseCase,
     data_dir: Path | None = None,
     settings: RuntimeSettings | None = None,
+    random_state: int = 42,
 ) -> Path:
     """Pre-process raw data and store the result as a CSV file.
 
@@ -82,6 +84,7 @@ def preprocess_raw_data(
             file will be written. If ``None``, the raw data directory from
             :class:`RuntimeSettings` is used.
         settings: Runtime snapshot used when no data directory is supplied.
+        random_state: Seed used to assign synthetic dates.
 
     Returns:
         Path: Path to the generated output CSV file.
@@ -91,6 +94,7 @@ def preprocess_raw_data(
         ValueError: If required feature columns are missing or columns repeat.
     """
 
+    random_state = resolve_seed(random_state)
     resolved_data_dir = (
         data_dir
         if data_dir is not None
@@ -110,6 +114,7 @@ def preprocess_raw_data(
         df=df,
         values=dates,
         column_name=date_column or use_case.event_time_column,
+        random_state=random_state,
     )
 
     output_path = resolved_data_dir / output_csv
@@ -132,6 +137,8 @@ def main() -> None:
     parser.add_argument("--output_csv", required=True)
     parser.add_argument("--start_date", required=True)
     parser.add_argument("--end_date", required=True)
+    parser.add_argument("--random_state", type=parse_seed, default=42)
+    parser.add_argument("--preparation_random_state", type=parse_seed_override)
 
     args = parser.parse_args()
 
@@ -141,6 +148,7 @@ def main() -> None:
         start_date=args.start_date,
         end_date=args.end_date,
         use_case=get_use_case(args.use_case),
+        random_state=resolve_seed(args.random_state, args.preparation_random_state),
     )
 
 

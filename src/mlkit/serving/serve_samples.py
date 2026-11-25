@@ -16,6 +16,7 @@ import requests
 
 from mlkit import _parse_port
 from mlkit.config import ServingSettings, configure_logging
+from mlkit.config.seeds import parse_seed, parse_seed_override, resolve_seed
 from mlkit.data.ingestion import load_raw_data, normalize_strings
 from mlkit.data.validation import validate_data
 from mlkit.use_cases import UseCase, get_use_case
@@ -349,8 +350,13 @@ def custom_parser(settings: ServingSettings | None = None) -> argparse.ArgumentP
     parser.add_argument(
         "--random_state",
         required=False,
-        type=int,
+        type=parse_seed,
         help="Random seed to allow reproducible sample draws.",
+    )
+    parser.add_argument(
+        "--monitoring_random_state",
+        type=parse_seed_override,
+        help="Sample seed override, or 'inherit' to use the root seed.",
     )
     parser.add_argument(
         "--timestamp",
@@ -446,8 +452,9 @@ def main() -> None:
     configure_model_environment(args=args, settings=settings)
     os.environ["USE_CASE"] = args.use_case
 
-    random_state = (
-        args.random_state if args.random_state is not None else random.randint(1, 1000)
+    random_state = resolve_seed(
+        args.random_state if args.random_state is not None else random.randint(1, 1000),
+        args.monitoring_random_state,
     )
 
     api_process = start_api_server(

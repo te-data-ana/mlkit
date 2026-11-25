@@ -9,7 +9,7 @@ import pytest
 from sklearn.base import BaseEstimator
 from use_cases.churn import CHURN_USE_CASE
 
-from mlkit.config.schemas import TrainingConfig, TuningConfig
+from mlkit.config.schemas import TrainingConfig, TrainingSeedOverrides, TuningConfig
 from mlkit.training import model_training, tuning
 from mlkit.training.calibration import make_cv_splits, make_stratified_random_cv_splits
 from mlkit.training.model_training import train_model
@@ -57,6 +57,7 @@ def test_training_threshold_holdout_and_random_calibration(
     config = replace(
         config_factory(classifier="dt"),
         random_state=17,
+        seed_overrides=TrainingSeedOverrides(training=23, classifier=31),
     )
     use_case = replace(
         CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
@@ -79,7 +80,8 @@ def test_training_threshold_holdout_and_random_calibration(
         test_df=test,
         calibration_method="sigmoid",
     )
-    assert calls == [(set(fit_df.index), 17)]
+    assert calls == [(set(fit_df.index), 23)]
+    assert result.classifier_config["random_state"] == 31
     assert calls[0][0].isdisjoint(validation_df.index)
     assert result.threshold_data == "training_validation"
     assert 0 <= result.threshold <= 1
@@ -95,17 +97,23 @@ def test_random_tuning_without_time_column(
     config = replace(
         config_factory(classifier="dt"),
         random_state=17,
+        seed_overrides=TrainingSeedOverrides(training=23, classifier=31),
         tuning=TuningConfig(n_trials=2, n_splits=2),
     )
     sampler = Mock(wraps=tuning.optuna.samplers.TPESampler)
     cv_splits = Mock(wraps=tuning.make_cv_splits)
+    create_model = Mock(wraps=tuning.create_model)
     monkeypatch.setattr(tuning.optuna.samplers, "TPESampler", sampler)
     monkeypatch.setattr(tuning, "make_cv_splits", cv_splits)
+    monkeypatch.setattr(tuning, "create_model", create_model)
     use_case = replace(
         CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
     )
     result = optimize_hyperparameters(use_case, config, data)
     assert result.n_trials == 2
-    sampler.assert_called_once_with(seed=17)
-    assert cv_splits.call_args.kwargs["random_state"] == 17
+    sampler.assert_called_once_with(seed=23)
+    assert cv_splits.call_args.kwargs["random_state"] == 23
+    assert all(
+        call.kwargs["random_state"] == 31 for call in create_model.call_args_list
+    )
     assert np.isfinite(result.best_score)

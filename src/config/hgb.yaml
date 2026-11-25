@@ -2,8 +2,7 @@ random_state: 26
 
 model:
   classifier: hgb
-  classifier_params:
-    random_state: 26
+  classifier_params: {}
 
 preprocessing:
   numeric_impute_strategy: median

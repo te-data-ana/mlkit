@@ -12,6 +12,8 @@ stages:
       --output_csv training.csv
       --start_date 2023-01-01
       --end_date 2025-12-01
+      --random_state ${random_state}
+      --preparation_random_state ${seeds.preparation}
     deps:
       - data/${use_case}/raw/customer_churn_dataset-training.csv
       - src/mlkit/config
@@ -22,6 +24,8 @@ stages:
     params:
       - pipeline/churn.yaml:
           - use_case
+          - random_state
+          - seeds.preparation
     outs:
       - data/${use_case}/raw/training.csv
   add_inference_reference_dates:
@@ -34,6 +38,8 @@ stages:
       --output_csv inference.csv
       --start_date 2026-01-01
       --end_date 2026-06-01
+      --random_state ${random_state}
+      --preparation_random_state ${seeds.preparation}
     deps:
       - data/${use_case}/raw/customer_churn_dataset-inference.csv
       - src/mlkit/config
@@ -44,6 +50,8 @@ stages:
     params:
       - pipeline/churn.yaml:
           - use_case
+          - random_state
+          - seeds.preparation
     outs:
       - data/${use_case}/raw/inference.csv
   prepare_partitioned_data:
@@ -102,6 +110,9 @@ stages:
       uv run mlkit train
       --use_case ${use_case}
       --config ${model.classifier}.yaml
+      --random_state ${random_state}
+      --training_random_state ${seeds.training}
+      --classifier_random_state ${seeds.classifier}
       --split_name ${split.name}
       --calibration_method ${calibration.method}
       --n_jobs ${training.n_jobs}
@@ -123,6 +134,9 @@ stages:
           - calibration.method
           - training.n_jobs
           - training.tune_model
+          - random_state
+          - seeds.training
+          - seeds.classifier
     outs:
       - data/${use_case}/manifests:
           persist: true

@@ -83,6 +83,8 @@ def train_model(
         )
     if type(n_jobs) is not int or n_jobs == 0 or n_jobs < -1:
         raise ValueError("n_jobs must be a positive integer or -1.")
+    if model_params_override is not None and "random_state" in model_params_override:
+        raise ValueError("Use the classifier seed override instead of random_state.")
     logger = logging.getLogger(__name__)
     target_column = use_case.target_column
 
@@ -123,6 +125,7 @@ def train_model(
                 config.model.classifier_params | (model_params_override or {})
             ),
             n_jobs=(n_jobs if calibration_method == "none" else 1),
+            random_state=config.classifier_seed,
         )
         logger.info(
             "Using classifier '%s' with params %s.",
@@ -156,7 +159,7 @@ def train_model(
                 method=calibration_method,
                 n_splits=config.calibration.n_splits,
                 n_jobs=n_jobs,
-                random_state=config.random_state,
+                random_state=config.training_seed,
             )
         logger.info("Model pipeline fit completed in %.3f seconds.", fit_timer.duration)
 

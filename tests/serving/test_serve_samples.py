@@ -513,10 +513,14 @@ def test_configure_model_environment_from_model_name_version(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("random_state", [0, 42])
+@pytest.mark.parametrize(
+    ("random_state", "override", "expected"), [(0, None, 0), (42, 7, 7)]
+)
 def test_main_starts_api_serves_samples_and_stops_server(
     monkeypatch: pytest.MonkeyPatch,
     random_state: int,
+    override: int | None,
+    expected: int,
 ) -> None:
     """Test that main orchestrates API startup, serving, and shutdown."""
 
@@ -531,6 +535,7 @@ def test_main_starts_api_serves_samples_and_stops_server(
         input_parquet=None,
         sample_size=100,
         random_state=random_state,
+        monitoring_random_state=override,
         timestamp=datetime(2026, 9, 30, tzinfo=UTC),
         drop_columns=["reference_date"],
         host="localhost",
@@ -600,7 +605,7 @@ def test_main_starts_api_serves_samples_and_stops_server(
         use_case=CHURN_USE_CASE,
         input_csv="inference.csv",
         sample_size=100,
-        random_state=random_state,
+        random_state=expected,
         settings=mock_settings,
         timestamp=args.timestamp,
         drop_columns=["reference_date"],
@@ -659,6 +664,7 @@ def test_main_stops_server_when_serving_fails(
         input_parquet=None,
         sample_size=100,
         random_state=42,
+        monitoring_random_state=None,
         timestamp=None,
         drop_columns=[],
         host="localhost",

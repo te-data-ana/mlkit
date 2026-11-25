@@ -1,4 +1,12 @@
 use_case: churn
+random_state: 42
+
+seeds:
+  preparation: inherit
+  split: inherit
+  training: inherit
+  classifier: inherit
+  monitoring: inherit
 
 split:
   name: temporal-70-10-10-10
