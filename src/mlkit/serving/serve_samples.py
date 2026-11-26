@@ -129,6 +129,9 @@ def predict_samples(
             else {}
         )
 
+        features = {
+            name: None if pd.isna(value) else value for name, value in features.items()
+        }
         response = requests.post(url=url, json=features, params=params)
         response.raise_for_status()
         predictions.append(response.json())

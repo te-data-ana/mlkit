@@ -14,7 +14,7 @@ stages:
       --map-target label 1 0
     deps:
       - src/mlkit
-      - use_cases/src/use_cases/phishing
+      - use_cases/src/use_cases/${use_case}
       - pyproject.toml
       - uv.lock
     params:

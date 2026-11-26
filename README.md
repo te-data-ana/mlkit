@@ -138,7 +138,7 @@ uv run dvc repro pipeline/churn/dvc.yaml
 uv run dvc status
 ```
 
-The churn, diabetes and phishing parameter presets specify a root `random_state` and
+The churn, diabetes, phishing and mushroom parameter presets specify a root `random_state` and
 five component overrides:
 
 ```yaml
@@ -323,6 +323,34 @@ Dataset attribution: Prasad, A. and Chandra, S. (2024),
 [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset),
 licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
 [associated paper](https://doi.org/10.1016/j.cose.2023.103545).
+
+### Secondary Mushroom workflow
+
+The [mushroom pipeline](pipeline/mushroom/dvc.yaml) snapshots UCI dataset 848
+and maps `class` to `0` for poisonous or unknown edibility and `1` for edible.
+Its 20 inputs comprise three measurements and 17 categorical characteristics.
+Missing values in the nine nullable categorical fields remain null in prepared
+data and API requests, and are represented as a separate category inside the
+model. Categorical codes are validated against UCI descriptions and observed
+dataset codes. The [mushroom parameters](pipeline/mushroom.yaml) configure
+stratified splits, training, and monitoring.
+
+```bash
+uv run dvc repro pipeline/mushroom/dvc.yaml
+uv run dvc repro pipeline/mushroom/monitoring/dvc.yaml
+```
+
+The [data layout](data/mushroom/README.md) contains local snapshots, predictions
+and monitoring outputs. DVC cannot detect upstream dataset changes; force the
+`fetch_and_prepare_uci` stage to refresh the snapshot, then reproduce dependent
+stages. Keep the resulting DVC lock and cache to reproduce an older snapshot.
+
+This dataset describes simulated mushrooms; this workflow must not be used to
+decide whether a mushroom is safe to eat.
+
+Dataset attribution: Wagner, D., Heider, D. and Hattab, G. (2021),
+*Secondary Mushroom*, [UCI Machine Learning Repository](https://doi.org/10.24432/C5FP5Q),
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ### CDC diabetes workflow
 
@@ -672,7 +700,7 @@ well as optional feature-engineering (`feature_builder_factory`),
 column names to Pydantic-compatible types. Shared training, batch prediction,
 API, and monitoring code consumes this data contract.
 
-The `mlkit-use-cases` workspace package exposes churn, diabetes and phishing use cases
+The `mlkit-use-cases` workspace package exposes churn, diabetes, mushroom and phishing use cases
 through `mlkit.use_cases` entry points. `get_use_case()` discovers installed
 entry points and returns the named contract. External use-case packages can use
 the same entry-point group without modifying `mlkit`.
@@ -1107,7 +1135,7 @@ src/mlkit/             Application package
   training/            Training and hyperparameter tuning
 src/config/            YAML training configurations
 use_cases/             Separate use-case workspace package
-  src/use_cases/       Churn, diabetes, phishing, and other use-case implementations
+  src/use_cases/       Churn, diabetes, mushroom, phishing, and other use-case implementations
   tests/               Use-case implementation tests
 data/<use_case>/       Per-use-case local data (not stored in Git)
   manifests/           Training manifests

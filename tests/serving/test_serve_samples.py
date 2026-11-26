@@ -164,6 +164,27 @@ def test_predict_samples_combines_predictions(
 
 
 @pytest.mark.unit
+def test_predict_samples_sends_missing_features_as_json_null(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame({"gender": ["Female", None], "age": [42, 52]})
+    original = frame.copy(deep=True)
+    bodies = []
+
+    def post(url: str, **kwargs):
+        prepared = requests.Request("POST", url, json=kwargs["json"]).prepare()
+        bodies.append(prepared.body)
+        return MockResponse({"predicted_class": 1, "predicted_probability": 0.9})
+
+    monkeypatch.setattr(serve_samples.requests, "post", post)
+    serve_samples.predict_samples(
+        df=frame, settings=RuntimeSettings(), use_case=CHURN_USE_CASE
+    )
+    assert b'"gender": null' in bodies[1]
+    pd.testing.assert_frame_equal(frame, original)
+
+
+@pytest.mark.unit
 def test_predict_samples_raises_http_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

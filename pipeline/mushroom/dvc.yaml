@@ -1,0 +1,118 @@
+vars:
+  - ../mushroom.yaml
+
+stages:
+  fetch_and_prepare_uci:
+    wdir: ../..
+    cmd: >-
+      uv run --extra datasets mlkit fetch-and-prepare-uci
+      --dataset-id ${dataset_id}
+      --snapshot-dir data/${use_case}/raw/uci
+      --output-path data/${use_case}/prepared.parquet
+      --use_case ${use_case}
+      --map-target class '"p"' 0
+      --map-target class '"e"' 1
+    deps:
+      - src/mlkit
+      - use_cases/src/use_cases/${use_case}
+      - use_cases/pyproject.toml
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/mushroom.yaml:
+          - dataset_id
+          - use_case
+    outs:
+      - data/${use_case}/raw/uci
+      - data/${use_case}/prepared.parquet
+  create_split:
+    wdir: ../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      uv run mlkit create-split
+      --use_case ${use_case}
+      --input_parquet prepared.parquet
+      --split_name ${split.name}
+      --random_state ${random_state}
+      --split_random_state ${seeds.split}
+      --validation_fraction ${split.validation_fraction}
+      --test_fraction ${split.test_fraction}
+      --monitoring_fraction ${split.monitoring_fraction}
+    deps:
+      - data/${use_case}/prepared.parquet
+      - use_cases/src/use_cases/${use_case}
+      - use_cases/pyproject.toml
+      - src/mlkit
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/mushroom.yaml:
+          - use_case
+          - split
+          - random_state
+          - seeds.split
+    outs:
+      - data/${use_case}/splits
+  train_model:
+    wdir: ../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      uv run mlkit train
+      --use_case ${use_case}
+      --config ${model.classifier}.yaml
+      --random_state ${random_state}
+      --training_random_state ${seeds.training}
+      --classifier_random_state ${seeds.classifier}
+      --split_name ${split.name}
+      --calibration_method ${calibration.method}
+      --n_jobs ${training.n_jobs}
+      --tune-model ${training.tune_model}
+      --register-model ${model.register_model}
+      --promote-model ${model.promote_model}
+    deps:
+      - data/${use_case}/splits
+      - src/mlkit
+      - use_cases/src/use_cases/${use_case}
+      - use_cases/pyproject.toml
+      - src/config/${model.classifier}.yaml
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/mushroom.yaml:
+          - use_case
+          - model
+          - split.name
+          - calibration.method
+          - training.n_jobs
+          - training.tune_model
+          - random_state
+          - seeds.training
+          - seeds.classifier
+    outs:
+      - data/${use_case}/manifests:
+          persist: true
+  batch_predict:
+    wdir: ../..
+    cmd: >-
+      DATA_DIR=$PWD/data/${use_case}
+      uv run mlkit batch-predict
+      --use_case ${use_case}
+      --input_dataset splits/${split.name}_test.parquet
+      --output_dataset predictions/${use_case}_${model.classifier}_${split.name}
+      --model_manifest manifests/${use_case}-${model.classifier}-${split.name}.json
+    deps:
+      - data/${use_case}/splits/${split.name}_test.parquet
+      - data/${use_case}/manifests/${use_case}-${model.classifier}-${split.name}.json
+      - src/mlkit
+      - use_cases/src/use_cases/${use_case}
+      - use_cases/pyproject.toml
+      - pyproject.toml
+      - uv.lock
+    params:
+      - pipeline/mushroom.yaml:
+          - use_case
+          - model.classifier
+          - split.name
+    outs:
+      - data/${use_case}/predictions:
+          persist: true

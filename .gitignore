@@ -40,6 +40,7 @@ data/*/manifests/
 data/*/monitoring/
 data/*/partitioned/
 data/*/predictions/
+data/*/raw/uci/
 data/*/splits/
 *.csv
 *.json

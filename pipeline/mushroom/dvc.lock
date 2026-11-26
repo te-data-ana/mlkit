@@ -1,0 +1,197 @@
+schema: '2.0'
+stages:
+  fetch_and_prepare_uci:
+    cmd: uv run --extra datasets mlkit fetch-and-prepare-uci --dataset-id 848
+      --snapshot-dir data/mushroom/raw/uci --output-path
+      data/mushroom/prepared.parquet --use_case mushroom --map-target class
+      '"p"' 0 --map-target class '"e"' 1
+    deps:
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        dataset_id: 848
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/prepared.parquet
+      hash: md5
+      md5: e93c7d2fa567b95efb5539a3927ed115
+      size: 401501
+    - path: data/mushroom/raw/uci
+      hash: md5
+      md5: 72f1f9d749e26f33c39796a509f80708.dir
+      size: 409750
+      nfiles: 4
+  create_split:
+    cmd: DATA_DIR=$PWD/data/mushroom uv run mlkit create-split --use_case
+      mushroom --input_parquet prepared.parquet --split_name oos-42
+      --random_state 42 --split_random_state inherit --validation_fraction 0.1
+      --test_fraction 0.1 --monitoring_fraction 0.1
+    deps:
+    - path: data/mushroom/prepared.parquet
+      hash: md5
+      md5: e93c7d2fa567b95efb5539a3927ed115
+      size: 401501
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        random_state: 42
+        seeds.split: inherit
+        split:
+          name: oos-42
+          validation_fraction: 0.1
+          test_fraction: 0.1
+          monitoring_fraction: 0.1
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/splits
+      hash: md5
+      md5: eef60926b2180e249fbf70be3c09af9d.dir
+      size: 764506
+      nfiles: 5
+  train_model:
+    cmd: DATA_DIR=$PWD/data/mushroom uv run mlkit train --use_case mushroom
+      --config lr.yaml --random_state 42 --training_random_state inherit
+      --classifier_random_state inherit --split_name oos-42 --calibration_method
+      isotonic --n_jobs 16 --tune-model true --register-model true
+      --promote-model false
+    deps:
+    - path: data/mushroom/splits
+      hash: md5
+      md5: eef60926b2180e249fbf70be3c09af9d.dir
+      size: 764506
+      nfiles: 5
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/config/lr.yaml
+      hash: md5
+      md5: 8fd6042056de78cc015afe6f52eb480b
+      size: 446
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        calibration.method: isotonic
+        model:
+          classifier: lr
+          register_model: true
+          promote_model: false
+        random_state: 42
+        seeds.classifier: inherit
+        seeds.training: inherit
+        split.name: oos-42
+        training.n_jobs: 16
+        training.tune_model: true
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/manifests
+      hash: md5
+      md5: 7a5759b14262ec6c339ddb4924277198.dir
+      size: 5969
+      nfiles: 1
+  batch_predict:
+    cmd: DATA_DIR=$PWD/data/mushroom uv run mlkit batch-predict --use_case
+      mushroom --input_dataset splits/oos-42_test.parquet --output_dataset
+      predictions/mushroom_lr_oos-42 --model_manifest
+      manifests/mushroom-lr-oos-42.json
+    deps:
+    - path: data/mushroom/manifests/mushroom-lr-oos-42.json
+      hash: md5
+      md5: 4a70e7f09bef4c795e68c5eae1e34551
+      size: 5969
+    - path: data/mushroom/splits/oos-42_test.parquet
+      hash: md5
+      md5: 26f042382d60e2efaac1e8e2138b094c
+      size: 95104
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        model.classifier: lr
+        split.name: oos-42
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/predictions
+      hash: md5
+      md5: 4468b0e748e7bf131fb088300d1ef91f.dir
+      size: 108735
+      nfiles: 1

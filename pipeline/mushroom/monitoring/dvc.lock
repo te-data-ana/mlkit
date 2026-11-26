@@ -1,0 +1,204 @@
+schema: '2.0'
+stages:
+  serve_samples:
+    cmd: DATA_DIR=$PWD/data/mushroom LOGGING_DIR=$PWD/data/mushroom/api_logs
+      LOG_FEATURES=True uv run python -m mlkit.serving.serve_samples --use_case
+      mushroom --input_parquet splits/oos-42_monitoring.parquet --model_manifest
+      manifests/mushroom-lr-oos-42.json --sample_size 1000 --random_state 42
+      --monitoring_random_state inherit --timestamp 2026-10-01 --drop_columns
+      class
+    deps:
+    - path: data/mushroom/manifests/mushroom-lr-oos-42.json
+      hash: md5
+      md5: 4a70e7f09bef4c795e68c5eae1e34551
+      size: 5969
+    - path: data/mushroom/splits/oos-42_monitoring.parquet
+      hash: md5
+      md5: 9a55dadcb95f612a2c28248cc4c67b5b
+      size: 94947
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        model.classifier: lr
+        monitoring.sample_date: '2026-10-01'
+        random_state: 42
+        seeds.monitoring: inherit
+        split.name: oos-42
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/api_logs
+      hash: md5
+      md5: e69dcc15957c1fa0173e04bd218b1722.dir
+      size: 703637
+      nfiles: 1
+  ingest_prediction_logs:
+    cmd: DATA_DIR=$PWD/data/mushroom LOGGING_DIR=$PWD/data/mushroom/api_logs uv
+      run mlkit ingest-prediction-logs --use_case mushroom --dataset_name
+      api_predictions
+    deps:
+    - path: data/mushroom/api_logs
+      hash: md5
+      md5: e69dcc15957c1fa0173e04bd218b1722.dir
+      size: 703637
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        monitoring.analysis_dataset: api_predictions
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/api_predictions
+      hash: md5
+      md5: 66a01b317a299c60b4d8cbf7b3a5bb0a.dir
+      size: 79121
+      nfiles: 1
+  ingest_error_logs:
+    cmd: DATA_DIR=$PWD/data/mushroom LOGGING_DIR=$PWD/data/mushroom/api_logs uv
+      run mlkit ingest-error-logs --use_case mushroom --dataset_name api_errors
+    deps:
+    - path: data/mushroom/api_logs
+      hash: md5
+      md5: e69dcc15957c1fa0173e04bd218b1722.dir
+      size: 703637
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit/data
+      hash: md5
+      md5: f594825d0a1492c3c85f8a5c596cfb24.dir
+      size: 46031
+      nfiles: 9
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        monitoring.error_dataset: api_errors
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+  monitor:
+    cmd: DATA_DIR=$PWD/data/mushroom uv run mlkit monitor --use_case mushroom
+      --reference_dataset predictions/mushroom_lr_oos-42 --analysis_dataset
+      api_predictions --error_dataset api_errors --source_reference batch
+      --source_analysis api --model_manifest manifests/mushroom-lr-oos-42.json
+      --output_dir data/mushroom/monitoring/mushroom_lr_oos-42
+      --mlflow_experiment_name mushroom-monitoring --run_name mushroom_lr_oos-42
+    deps:
+    - path: data/mushroom/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: data/mushroom/api_predictions
+      hash: md5
+      md5: 66a01b317a299c60b4d8cbf7b3a5bb0a.dir
+      size: 79121
+      nfiles: 1
+    - path: data/mushroom/manifests/mushroom-lr-oos-42.json
+      hash: md5
+      md5: 4a70e7f09bef4c795e68c5eae1e34551
+      size: 5969
+    - path: data/mushroom/predictions/mushroom_lr_oos-42
+      hash: md5
+      md5: e3222c0121a6670bc884cb73442c0fe6.dir
+      size: 108735
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: b105a86a3b6a3e57da9fb13f5cb6397f.dir
+      size: 284272
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: efc2b6dae8be40877f4a9f3ea3c4275a
+      size: 617
+    - path: use_cases/src/use_cases/mushroom
+      hash: md5
+      md5: 685accc28012f0906af127ab6f7722e9.dir
+      size: 2899
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/mushroom.yaml:
+        model.classifier: lr
+        monitoring:
+          sample_date: '2026-10-01'
+          reference_dataset: predictions
+          analysis_dataset: api_predictions
+          error_dataset: api_errors
+          source_reference: batch
+          source_analysis: api
+        split.name: oos-42
+        use_case: mushroom
+    outs:
+    - path: data/mushroom/monitoring/mushroom_lr_oos-42
+      hash: md5
+      md5: 0d90ab7c3ba44c363c5811be989eff0f.dir
+      size: 613
+      nfiles: 1

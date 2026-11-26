@@ -12,7 +12,7 @@ stages:
       --use_case ${use_case}
     deps:
       - src/mlkit
-      - use_cases/src/use_cases/diabetes
+      - use_cases/src/use_cases/${use_case}
       - use_cases/pyproject.toml
       - pyproject.toml
       - uv.lock
