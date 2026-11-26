@@ -1,6 +1,6 @@
 [project]
 name = "mlkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Personal ML engineering and MLOps toolkit for building reusable machine learning solutions and continuously evolving production-grade practices."
 readme = "README.md"
 license = "MIT"

@@ -555,6 +555,6 @@ def test_batch_prediction_uses_registered_model(
         model_alias=str(registered_model["model_alias"]),
     )
     run = registry.client.get_run(model_version.run_id)
-    threshold = float(run.data.params["threshold"])
+    threshold = float(run.data.params["class_threshold"])
     assert (predictions["threshold"] == threshold).all()
     assert predictions["model_version"].notna().all()

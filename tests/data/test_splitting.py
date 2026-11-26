@@ -201,7 +201,7 @@ def test_invalid_temporal_groups_and_classes_do_not_write(data_dir: Path) -> Non
         splitting.create_data_splits(CHURN, df)
     df["reference_date"] = pd.date_range("2026-01-01", periods=8)
     df["churn"] = [0] * 4 + [1] * 4
-    with pytest.raises(ValueError, match="both binary classes"):
+    with pytest.raises(ValueError, match="all target classes"):
         splitting.create_data_splits(CHURN, df)
     df.loc[0, "reference_date"] = pd.NaT
     with pytest.raises(ValueError, match="timestamps"):

@@ -48,7 +48,7 @@ def test_load_model_returns_model_with_registry_metadata(
     assert loaded_model.use_case is CHURN_USE_CASE
     registry.load_registered_model.assert_called_once_with(
         model_name="churn-risk",
-        expected_use_case="churn",
+        expected_use_case=CHURN_USE_CASE,
         model_alias="champion",
         model_version=None,
     )
@@ -101,7 +101,7 @@ def test_load_model_uses_exact_registered_version(
     assert loaded_model.metadata.model_threshold == 0.4
     registry.load_registered_model.assert_called_once_with(
         model_name="churn-risk",
-        expected_use_case="churn",
+        expected_use_case=CHURN_USE_CASE,
         model_alias=None,
         model_version=9,
     )
@@ -135,7 +135,7 @@ def test_load_model_uses_manifest_threshold_for_registered_version(
     assert loaded_model.metadata.model_reference == manifest.model.model_reference
     registry.load_registered_model.assert_called_once_with(
         model_name=manifest.model.model_name,
-        expected_use_case="churn",
+        expected_use_case=CHURN_USE_CASE,
         model_version=manifest.model.model_version,
     )
 
@@ -197,6 +197,23 @@ def test_load_model_rejects_manifest_for_another_use_case(
     with pytest.raises(ValueError, match="selects use case 'alternate'"):
         model_loader.load_model(use_case=CHURN_USE_CASE, manifest=manifest)
 
+    registry_factory.assert_not_called()
+
+
+@pytest.mark.unit
+def test_load_model_rejects_mismatched_manifest_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+    training_manifest_factory: Callable[..., TrainingManifest],
+) -> None:
+    manifest = training_manifest_factory()
+    manifest = replace(
+        manifest,
+        training=replace(manifest.training, class_selection_strategy="argmax"),
+    )
+    registry_factory = Mock()
+    monkeypatch.setattr(model_loader, "ModelRegistry", registry_factory)
+    with pytest.raises(ValueError, match="class selection strategy"):
+        model_loader.load_model(use_case=CHURN_USE_CASE, manifest=manifest)
     registry_factory.assert_not_called()
 
 

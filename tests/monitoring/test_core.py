@@ -166,7 +166,7 @@ def test_prepare_validated_df_requires_predictions_target_and_features(
             require_target=True,
         )
 
-    with pytest.raises(ValueError, match="both target classes"):
+    with pytest.raises(ValueError, match="all target classes"):
         single_target = df.copy()
         single_target[CHURN_USE_CASE.target_column] = [0, 0, 0]
         core._prepare_validated_df(

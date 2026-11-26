@@ -164,7 +164,6 @@ def run_training_job(
                 ),
             )
         classifier_alias = config.model.classifier
-        threshold_strategy = config.threshold.strategy
         selected_use_case = get_use_case(use_case)
         experiment_name = f"{selected_use_case.name}-{split_name}"
         model_name = f"{selected_use_case.name}-model"
@@ -182,9 +181,9 @@ def run_training_job(
 
         logger.info("Loaded training configuration from '%s'.", config_file_path)
         logger.info(
-            "Configured classifier alias '%s' with threshold strategy '%s'.",
+            "Configured classifier alias '%s' with class selection strategy '%s'.",
             classifier_alias,
-            threshold_strategy,
+            selected_use_case.class_selection_strategy,
         )
         logger.info(
             "Model registration is %s; model promotion is %s.",
@@ -347,6 +346,12 @@ def run_training_job(
 
                 if champion:
                     logger.info("Retrieving metric for current champion model.")
+                    if len(selected_use_case.target_classes) > 2:
+                        registry.validate_multiclass_comparison(
+                            run_id=champion.run_id,
+                            expected_use_case=selected_use_case.name,
+                            target_classes=selected_use_case.target_classes,
+                        )
                     champion_metrics = registry.get_metrics_by_alias(
                         model_name=model_name,
                         model_alias="champion",
@@ -421,13 +426,14 @@ def run_training_job(
                 training=ManifestTraining(
                     classifier_name=result.classifier_config["model_name"],
                     classifier_alias=classifier_alias,
+                    target_classes=selected_use_case.target_classes,
                     feature_count=len(result.feature_names_out),
                     feature_names_in=result.feature_names_in,
                     feature_names_out=result.feature_names_out,
                     calibration=calibration_method,
                     n_jobs=n_jobs,
                     tuning_enabled=tune_model,
-                    threshold_strategy=config.threshold.strategy,
+                    class_selection_strategy=selected_use_case.class_selection_strategy,
                     threshold_data=result.threshold_data,
                     threshold=result.threshold,
                 ),

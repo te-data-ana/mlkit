@@ -151,7 +151,10 @@ def test_snapshot_rejects_invalid_target(tmp_path: Path, overlap: bool) -> None:
         features["Diabetes_binary"] = [0, 1]
     features.to_parquet(tmp_path / "features.parquet")
     pd.DataFrame({"Diabetes_binary": [0, 2]}).to_parquet(tmp_path / "targets.parquet")
-    with pytest.raises(ValueError, match="must not overlap" if overlap else "0 or 1"):
+    with pytest.raises(
+        expected_exception=ValueError,
+        match="must not overlap" if overlap else r"must be among \(0, 1\)",
+    ):
         prepare_uci_snapshot(
             tmp_path, tmp_path / "prepared.parquet", use_case=DIABETES_USE_CASE
         )

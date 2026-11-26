@@ -1,4 +1,5 @@
 import logging
+import math
 from dataclasses import dataclass
 
 import mlflow
@@ -6,6 +7,8 @@ from mlflow import MlflowClient, MlflowException
 from mlflow.entities.model_registry import ModelVersion
 from mlflow.models.model import ModelInfo
 from sklearn.base import BaseEstimator
+
+from mlkit.use_cases import UseCase
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +19,7 @@ class RegisteredModel:
 
     model: BaseEstimator
     model_version: ModelVersion
-    model_threshold: float
+    model_threshold: float | None
 
 
 class ModelRegistry:
@@ -230,10 +233,26 @@ class ModelRegistry:
             expected_use_case=expected_use_case,
         )
 
+    def validate_multiclass_comparison(
+        self, run_id: str, expected_use_case: str, target_classes: tuple[int, ...]
+    ) -> None:
+        """Reject comparisons with a different class contract or metric definition."""
+        run = self.client.get_run(run_id=run_id)
+        self._ensure_run_use_case(
+            run_id, run.data.tags.get("use_case_name"), expected_use_case
+        )
+        if (
+            run.data.tags.get("target_classes") != ",".join(map(str, target_classes))
+            or run.data.params.get("class_metric_profile") != "macro_ovr"
+        ):
+            raise ValueError(
+                "Champion model has incompatible multiclass evaluation metadata."
+            )
+
     def load_registered_model(
         self,
         model_name: str,
-        expected_use_case: str,
+        expected_use_case: UseCase,
         model_alias: str | None = None,
         model_version: int | None = None,
     ) -> RegisteredModel:
@@ -241,7 +260,7 @@ class ModelRegistry:
 
         Args:
             model_name: Registered model name.
-            expected_use_case: Use case selected by the caller.
+            expected_use_case: Use-case contract selected by the caller.
             model_alias: Alias identifying the desired version.
             model_version: Exact registered version number.
 
@@ -270,15 +289,33 @@ class ModelRegistry:
         self._ensure_run_use_case(
             run_id=model_version_object.run_id,
             recorded_use_case=run.data.tags.get("use_case_name"),
-            expected_use_case=expected_use_case,
+            expected_use_case=expected_use_case.name,
         )
+        strategy = run.data.params.get("class_selection_strategy")
+        if strategy != expected_use_case.class_selection_strategy:
+            raise ValueError(
+                "Registered model class selection strategy is missing or "
+                "incompatible with the selected use case."
+            )
+        if strategy == "argmax":
+            if "class_threshold" in run.data.params or run.data.tags.get(
+                "target_classes"
+            ) != ",".join(map(str, expected_use_case.target_classes)):
+                raise ValueError("Registered model has invalid multiclass metadata.")
+            threshold = None
+        else:
+            try:
+                threshold = float(run.data.params["class_threshold"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("Registered model has an invalid threshold.") from exc
+            if not math.isfinite(threshold) or not 0 <= threshold <= 1:
+                raise ValueError("Registered model has an invalid threshold.")
         model = self.load_model_by_version(
             model_name=model_name,
             model_version=resolved_version,
         )
-        threshold = float(run.data.params["threshold"])
         logger.info(
-            "Loaded model '%s' version %s with threshold %.4f.",
+            "Loaded model '%s' version %s with threshold %s.",
             model_name,
             resolved_version,
             threshold,

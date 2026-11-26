@@ -112,15 +112,16 @@ class ManifestTraining:
 
     classifier_name: str
     classifier_alias: str
+    target_classes: tuple[int, ...]
     feature_count: int
     feature_names_in: list[str]
     feature_names_out: list[str]
     tuning_enabled: bool
     n_jobs: int
     calibration: str
-    threshold_strategy: str
+    class_selection_strategy: str
     threshold_data: str
-    threshold: float
+    threshold: float | None
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,7 @@ class TrainingManifest:
     training: ManifestTraining
     evaluation: ManifestEvaluation
     lifecycle: ManifestLifecycle
-    schema_version: int = 4
+    schema_version: int = 5
 
     def write(self, path: Path) -> None:
         """Write the manifest as formatted JSON.
@@ -194,6 +195,7 @@ class TrainingManifest:
                     "name": self.training.classifier_name,
                     "alias": self.training.classifier_alias,
                 },
+                "target_classes": list(self.training.target_classes),
                 "features": {
                     "count": self.training.feature_count,
                     "names_in": self.training.feature_names_in,
@@ -206,8 +208,8 @@ class TrainingManifest:
                 "calibration": {
                     "method": self.training.calibration,
                 },
+                "class_selection_strategy": self.training.class_selection_strategy,
                 "threshold": {
-                    "strategy": self.training.threshold_strategy,
                     "selected_on": self.training.threshold_data,
                     "value": self.training.threshold,
                 },
@@ -266,7 +268,7 @@ class TrainingManifest:
             raise TypeError(
                 f"Training manifest '{path}' has an invalid schema_version."
             )
-        if payload["schema_version"] != 4:
+        if payload["schema_version"] != 5:
             raise ValueError(
                 f"Training manifest '{path}' uses unsupported schema_version "
                 f"{payload['schema_version']}."
@@ -296,10 +298,12 @@ class TrainingManifest:
             training,
             {
                 "classifier",
+                "target_classes",
                 "features",
                 "tuning",
                 "n_jobs",
                 "calibration",
+                "class_selection_strategy",
                 "threshold",
             },
             "training",
@@ -329,7 +333,7 @@ class TrainingManifest:
         _require_fields(calibration, {"method"}, "training.calibration", path)
         _require_fields(
             threshold,
-            {"strategy", "selected_on", "value"},
+            {"selected_on", "value"},
             "training.threshold",
             path,
         )
@@ -358,7 +362,7 @@ class TrainingManifest:
             (classifier, "name"),
             (classifier, "alias"),
             (calibration, "method"),
-            (threshold, "strategy"),
+            (training, "class_selection_strategy"),
             (threshold, "selected_on"),
         )
         if not all(isinstance(obj[key], str) for obj, key in text_fields):
@@ -400,7 +404,34 @@ class TrainingManifest:
                 f"Training manifest '{path}' has invalid lifecycle.promotion.enabled."
             )
 
-        if not isinstance(threshold["value"], float):
+        target_classes = training.get("target_classes", [0, 1])
+        if (
+            not isinstance(target_classes, list)
+            or len(target_classes) < 2
+            or any(type(value) is not int for value in target_classes)
+            or len(set(target_classes)) != len(target_classes)
+        ):
+            raise TypeError(f"Training manifest '{path}' has invalid target classes.")
+        expected_strategy = "max_f1" if len(target_classes) == 2 else "argmax"
+        if training["class_selection_strategy"] != expected_strategy:
+            raise ValueError(
+                f"Training manifest '{path}' has an invalid class selection strategy."
+            )
+        if expected_strategy == "argmax" and threshold["value"] is not None:
+            raise ValueError(
+                f"Training manifest '{path}' has invalid multiclass decision metadata."
+            )
+        if threshold["selected_on"] != (
+            "training_validation" if expected_strategy == "max_f1" else "not_applicable"
+        ):
+            raise ValueError(
+                f"Training manifest '{path}' has invalid threshold selection data."
+            )
+        if expected_strategy == "max_f1" and (
+            type(threshold["value"]) is not float
+            or not math.isfinite(threshold["value"])
+            or not 0 <= threshold["value"] <= 1
+        ):
             raise TypeError(
                 f"Training manifest '{path}' has an invalid threshold value."
             )
@@ -447,13 +478,14 @@ class TrainingManifest:
             training=ManifestTraining(
                 classifier_name=classifier["name"],
                 classifier_alias=classifier["alias"],
+                target_classes=tuple(target_classes),
                 feature_count=features["count"],
                 feature_names_in=features["names_in"],
                 feature_names_out=features["names_out"],
                 tuning_enabled=tuning["enabled"],
                 n_jobs=training["n_jobs"],
                 calibration=calibration["method"],
-                threshold_strategy=threshold["strategy"],
+                class_selection_strategy=training["class_selection_strategy"],
                 threshold_data=threshold["selected_on"],
                 threshold=threshold["value"],
             ),

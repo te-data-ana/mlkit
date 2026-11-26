@@ -23,7 +23,7 @@ def _offset_validation_error(exc: ValidationError, start: int) -> ValidationErro
 
 @dataclass(frozen=True)
 class UseCase:
-    """Data and adapter contract for one binary-classification use case."""
+    """Data and adapter contract for one classification use case."""
 
     name: str
     target_column: str
@@ -33,6 +33,8 @@ class UseCase:
     split_strategy: Literal["temporal", "stratified_random"] = "temporal"
     index_column: str | None = None
     metadata_fields: Mapping[str, Any] = field(default_factory=dict)
+    target_classes: tuple[int, ...] = (0, 1)
+    categorical_columns: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -53,6 +55,18 @@ class UseCase:
             raise ValueError("Use-case target and time columns must be distinct.")
         if not self.feature_columns:
             raise ValueError("Use-case feature schema must not be empty.")
+        if (
+            len(self.target_classes) < 2
+            or any(type(value) is not int for value in self.target_classes)
+            or any(value < 0 for value in self.target_classes)
+            or len(set(self.target_classes)) != len(self.target_classes)
+            or (len(self.target_classes) == 2 and self.target_classes != (0, 1))
+        ):
+            raise ValueError(
+                "Target classes must be distinct nonnegative integers; binary classes must be (0, 1)."
+            )
+        if not set(self.categorical_columns).issubset(self.feature_columns):
+            raise ValueError("Categorical columns must be use-case features.")
         if {self.target_column, self.event_time_column}.intersection(
             self.feature_columns
         ):
@@ -72,6 +86,11 @@ class UseCase:
     def feature_columns(self) -> tuple[str, ...]:
         """Return the feature names in schema order."""
         return tuple(self.feature_schema.model_fields)
+
+    @property
+    def class_selection_strategy(self) -> Literal["max_f1", "argmax"]:
+        """Return the class selection strategy implied by the target classes."""
+        return "max_f1" if len(self.target_classes) == 2 else "argmax"
 
     @property
     def event_time_column(self) -> str:
@@ -127,7 +146,11 @@ class UseCase:
     def _metadata_schema(self, columns: pd.Index) -> type[BaseModel]:
         """Create a schema for the metadata columns present in a DataFrame."""
         metadata_types = {
-            self.target_column: Annotated[int, Field(ge=0, le=1)],
+            self.target_column: (
+                Annotated[int, Field(ge=0, le=1)]
+                if self.target_classes == (0, 1)
+                else Literal.__getitem__(self.target_classes)
+            ),
             self.event_time_column: datetime,
             **self.metadata_fields,
         }

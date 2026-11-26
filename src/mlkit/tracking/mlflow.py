@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -97,7 +98,25 @@ def log_experiment_result(
 
     Returns:
         MLflow model metadata for the logged scikit-learn model.
+
+    Raises:
+        ValueError: If the result threshold conflicts with the use case.
     """
+    if use_case.class_selection_strategy == "argmax":
+        valid_threshold = (
+            result.threshold is None and result.threshold_data == "not_applicable"
+        )
+    else:
+        valid_threshold = (
+            result.threshold is not None
+            and math.isfinite(result.threshold)
+            and 0 <= result.threshold <= 1
+            and result.threshold_data == "training_validation"
+        )
+    if not valid_threshold:
+        raise ValueError(
+            "Training threshold does not match the class selection strategy."
+        )
     logger.info("Logging training parameters and tags to MLflow.")
     # log all parameters required for reproducibility
     seeds = {
@@ -112,8 +131,9 @@ def log_experiment_result(
     # log use_case tags
     use_case_tags = {
         "use_case_name": use_case.name,
+        "target_classes": ",".join(map(str, use_case.target_classes)),
         "calibration": calibration_method,
-        "threshold_data": result.threshold_data,
+        "threshold_selection": result.threshold_data,
         "feature_count": len(result.feature_names_out),
         "target_column": use_case.target_column,
     }
@@ -134,13 +154,15 @@ def log_experiment_result(
         "calibration_n_bins": config.calibration.n_bins,
     }
     mlflow.log_params(calibration_parameters)
-    # log threshold parameters
-    threshold_parameters: dict[str, str | float | int] = {
-        "threshold": result.threshold,
-        "threshold_strategy": config.threshold.strategy,
-        "threshold_data": result.threshold_data,
+    # log class parameters
+    class_parameters: dict[str, str | float | int] = {
+        "class_selection_strategy": use_case.class_selection_strategy,
     }
-    mlflow.log_params(threshold_parameters)
+    if result.threshold is not None:
+        class_parameters["class_threshold"] = result.threshold
+    else:
+        class_parameters["class_metric_profile"] = "macro_ovr"
+    mlflow.log_params(class_parameters)
     # log invocation parameters
     invocation_parameters: dict[str, bool] = {
         "model_tuning_enabled": tune_model,

@@ -1,17 +1,39 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+Probability = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
 
-def prediction_response_schema(time_column: str) -> type[BaseModel]:
-    """Create the API response schema for a use case's timestamp field."""
+
+def prediction_response_schema(
+    time_column: str, target_classes: tuple[int, ...] = (0, 1)
+) -> type[BaseModel]:
+    """Create the API response schema for a use case's timestamp field.
+
+    Args:
+        time_column: Name of the timestamp field.
+        target_classes: Classes for prediction.
+
+    Returns:
+        Response schema class.
+    """
+    prediction_fields = (
+        {
+            "predicted_class": (Literal.__getitem__(target_classes), ...),
+            "predicted_probabilities": (dict[str, Probability], ...),
+        }
+        if len(target_classes) > 2
+        else {
+            "predicted_class": (Literal[0, 1], ...),
+            "predicted_probability": (float, Field(ge=0.0, le=1.0)),
+        }
+    )
     return create_model(
         f"PredictionResponse_{time_column}",
         **{
             time_column: (datetime, ...),
-            "predicted_class": (Literal[0, 1], ...),
-            "predicted_probability": (float, Field(ge=0.0, le=1.0)),
+            **prediction_fields,
             "metadata": (dict[str, Any], ...),
         },
     )
@@ -38,6 +60,14 @@ class PredictionEvent(BaseInferenceEvent):
     predicted_class: Literal[0, 1]
     predicted_probability: float = Field(ge=0.0, le=1.0)
     threshold: float = Field(ge=0.0, le=1.0)
+
+
+class MulticlassPredictionEvent(BaseInferenceEvent):
+    """Prediction event containing all multiclass probabilities."""
+
+    event: Literal["prediction"] = "prediction"
+    predicted_class: int
+    predicted_probabilities: dict[str, Probability]
 
 
 class PredictionErrorEvent(BaseInferenceEvent):

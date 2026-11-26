@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["main"]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 def _parse_boolean(value: str) -> bool:
@@ -48,7 +48,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="mlkit",
         description=(
-            "Train, score, and serve binary-classification models with the "
+            "Train, score, and serve classification models with the "
             "local MLflow workflow."
         ),
         epilog=(

@@ -1,9 +1,8 @@
 # MLkit
 
-A local-first binary-classification MLOps project, with customer churn as its
-included use case. It demonstrates data preparation, time-based evaluation,
-model training and promotion, batch and HTTP inference, and model, data, and
-service monitoring.
+A local-first classification MLOps project, with multiple included use cases.
+It demonstrates data preparation and validation, model tuning, training and
+promotion, batch and HTTP inference, and model, data, and service monitoring.
 
 The project uses scikit-learn pipelines for feature engineering and prediction,
 MLflow for experiments and the model registry, DVC for reproducible data and
@@ -138,8 +137,8 @@ uv run dvc repro pipeline/churn/dvc.yaml
 uv run dvc status
 ```
 
-The churn, diabetes, phishing and mushroom parameter presets specify a root `random_state` and
-five component overrides:
+The churn, diabetes, phishing, mushroom and students parameter presets specify
+a root `random_state` and five component overrides:
 
 ```yaml
 random_state: 42
@@ -261,11 +260,10 @@ UCI snapshot preparation is shared across datasets. It saves UCI identifier
 columns separately when available, normalizes identifier, feature and target
 names, and retains all columns by default, including multiple or non-binary
 targets. Snapshots without identifiers remain supported. Supply `--use_case`
-to validate and filter with an existing single-binary-target contract. To map
-target values, `--map-target` accepts a
-normalized target name and JSON scalar source and result values; repeat for
-every value mapping. The phishing pipeline explicitly uses
-`--map-target label 0 1 --map-target label 1 0`.
+to validate and filter with an existing single-target classification contract.
+To map target values, `--map-target` accepts a normalized target name and JSON
+scalar source and result values; repeat for every value mapping. The phishing
+pipeline explicitly uses `--map-target label 0 1 --map-target label 1 0`.
 
 ```bash
 uv run --extra datasets mlkit fetch-and-prepare-uci \
@@ -323,6 +321,49 @@ Dataset attribution: Prasad, A. and Chandra, S. (2024),
 [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset),
 licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
 [associated paper](https://doi.org/10.1016/j.cose.2023.103545).
+
+### Students' dropout and academic success workflow
+
+The [students pipeline](pipeline/students/dvc.yaml) snapshots UCI dataset 697.
+Its target labels are `0` for Dropout, `1` for Enrolled, and `2` for Graduate
+at the end of the normal course duration. The 36 inputs include demographic,
+academic and economic variables, including first- and second-semester results;
+this is not an enrollment-time prediction. Integer-coded nominal variables are
+treated as categorical, while binary variables, counts and grades are numeric.
+The dataset is imbalanced, particularly for Enrolled.
+
+Multiclass predictions select the highest-probability class and expose
+probabilities for every class. API responses and events use a
+`predicted_probabilities` mapping; batch and ingested datasets use
+`predicted_probability_0`, `predicted_probability_1`, and
+`predicted_probability_2`. Multiclass ROC AUC, average precision, precision,
+recall and F1 use macro averaging over classes. Brier score is half the mean
+sum of squared one-hot probability errors, and calibration error is the mean
+of classwise one-vs-rest expected calibration errors.
+
+```bash
+uv run dvc repro pipeline/students/dvc.yaml
+uv run dvc repro pipeline/students/monitoring/dvc.yaml
+```
+
+The [parameters](pipeline/students.yaml) configure a stratified split and
+training. The monitoring pipeline samples 400 records from the independent
+monitoring cohort; API timestamps are simulated.
+See the [data layout](data/students/README.md).
+The simulation logs input features; disable logging if PII data is used.
+DVC does not detect upstream UCI changes: force `fetch_and_prepare_uci` and
+reproduce downstream stages to refresh the snapshot. Keep the DVC locks and
+cache to reproduce an older snapshot; local data and MLflow artifacts are not
+committed.
+
+This demonstration must not be used to make automated decisions about students.
+The dataset includes demographic information from a single institution and
+requires careful assessment of fairness and suitability.
+
+Dataset attribution: Realinho, V., Vieira Martins, M., Machado, J. and
+Baptista, L. (2021), *Predict Students' Dropout and Academic Success*,
+[UCI Machine Learning Repository](https://doi.org/10.24432/C5MC89),
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ### Secondary Mushroom workflow
 
@@ -700,10 +741,11 @@ well as optional feature-engineering (`feature_builder_factory`),
 column names to Pydantic-compatible types. Shared training, batch prediction,
 API, and monitoring code consumes this data contract.
 
-The `mlkit-use-cases` workspace package exposes churn, diabetes, mushroom and phishing use cases
-through `mlkit.use_cases` entry points. `get_use_case()` discovers installed
-entry points and returns the named contract. External use-case packages can use
-the same entry-point group without modifying `mlkit`.
+The `mlkit-use-cases` workspace package exposes churn, diabetes, mushroom,
+phishing and students use cases through `mlkit.use_cases` entry points.
+`get_use_case()` discovers installed entry points and returns the named contract.
+External use-case packages can use the same entry-point group without modifying
+`mlkit`.
 
 To add another use case:
 
@@ -819,9 +861,6 @@ calibration:
   n_splits: 3
   n_bins: 10
 
-threshold:
-  strategy: max_f1
-
 promotion:
   min_delta: 0.005
   metric_weights:
@@ -879,14 +918,18 @@ They do not provide probabilities when used without calibration. During Optuna
 ranking-metric evaluation, these estimators are scored using their decision
 function.
 
-### Threshold selection
+### Class selection
 
-The independent validation cohort selects the F1-maximizing threshold
-(`threshold.strategy: max_f1`). Tuning, calibration and final fitting use only
-the fit cohort; the separate test set is used only for evaluation.
+The use case determines class selection automatically. For binary targets,
+`max_f1` selects an F1-maximizing probability threshold on the independent
+validation cohort. For multiclass targets, `argmax` selects the class with the
+highest probability and no threshold is used. Tuning, calibration and final
+fitting use only the fit cohort; the separate test set is used only for
+evaluation.
 
-Runs log the threshold, validation fraction, source and effective seeds as MLflow
-parameters. The reliability diagram is logged under `calibration/`.
+Runs record `class_selection_strategy` in MLflow and
+`training.class_selection_strategy` in the training manifest. Binary runs
+also log the threshold. The reliability diagram is logged under `calibration/`.
 
 ### Evaluation
 

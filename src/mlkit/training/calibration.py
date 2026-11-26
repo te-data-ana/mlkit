@@ -17,6 +17,7 @@ def make_temporal_cv_splits(
     target_column: str,
     time_column: str,
     n_splits: int,
+    target_classes: tuple[int, ...] = (0, 1),
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Create expanding historical folds while keeping timestamp groups intact.
 
@@ -64,11 +65,10 @@ def make_temporal_cv_splits(
         val_unique = unique_timestamps[val_times]
         train_indices = np.flatnonzero(np.isin(timestamp_array, train_unique))
         val_indices = np.flatnonzero(np.isin(timestamp_array, val_unique))
-        if (
-            pd.Series(labels[train_indices]).nunique() < 2
-            or pd.Series(labels[val_indices]).nunique() < 2
-        ):
-            raise ValueError("Every temporal CV fold must contain both target classes.")
+        if set(labels[train_indices]) != set(target_classes) or set(
+            labels[val_indices]
+        ) != set(target_classes):
+            raise ValueError("Every temporal CV fold must contain all target classes.")
         splits.append((train_indices, val_indices))
     return splits
 
@@ -79,6 +79,7 @@ def make_stratified_random_cv_splits(
     target_column: str,
     n_splits: int,
     random_state: int = 42,
+    target_classes: tuple[int, ...] = (0, 1),
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Create seeded stratified cross-validation folds.
 
@@ -97,8 +98,12 @@ def make_stratified_random_cv_splits(
     if target_column not in df or df[target_column].isna().any():
         raise ValueError("Stratified CV requires a non-missing target.")
     counts = df[target_column].value_counts()
-    if set(counts.index) != {0, 1} or n_splits < 2 or counts.min() < n_splits:
-        raise ValueError("Stratified CV requires both classes in every fold.")
+    if (
+        set(counts.index) != set(target_classes)
+        or n_splits < 2
+        or counts.min() < n_splits
+    ):
+        raise ValueError("Stratified CV requires all classes in every fold.")
     splitter = StratifiedKFold(
         n_splits=n_splits, shuffle=True, random_state=random_state
     )
@@ -134,6 +139,7 @@ def make_cv_splits(
             target_column=use_case.target_column,
             time_column=use_case.time_column,
             n_splits=n_splits,
+            target_classes=use_case.target_classes,
         )
     if use_case.split_strategy == "stratified_random":
         return make_stratified_random_cv_splits(
@@ -141,6 +147,7 @@ def make_cv_splits(
             target_column=use_case.target_column,
             n_splits=n_splits,
             random_state=random_state,
+            target_classes=use_case.target_classes,
         )
     raise ValueError(f"Unknown cross-validation strategy: {use_case.split_strategy}")
 

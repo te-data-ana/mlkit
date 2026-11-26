@@ -258,7 +258,7 @@ def test_api_loads_configured_model_selector(
 
     registry.load_registered_model.assert_called_once_with(
         model_name="churn-risk",
-        expected_use_case="churn",
+        expected_use_case=CHURN_USE_CASE,
         model_alias=expected_alias,
         model_version=model_version,
     )

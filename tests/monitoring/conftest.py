@@ -68,7 +68,7 @@ def valid_prediction_log_path(tmp_path: Path) -> Path:
             "model_version": 1,
             "predicted_class": 0,
             "predicted_probability": 0.35,
-            "threshold": 0.5,
+            "class_threshold": 0.5,
             "features": {
                 "age": 31,
                 "tenure": 15,
@@ -92,7 +92,7 @@ def valid_prediction_log_path(tmp_path: Path) -> Path:
             "model_version": 1,
             "predicted_class": 1,
             "predicted_probability": 0.75,
-            "threshold": 0.5,
+            "class_threshold": 0.5,
             "features": {
                 "age": 48,
                 "tenure": 19,

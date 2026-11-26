@@ -15,7 +15,6 @@ from mlkit.config.schemas import (
     ClassifierConfig,
     PreprocessingConfig,
     PromotionConfig,
-    ThresholdConfig,
     TrainingConfig,
 )
 from mlkit.evaluation import metrics
@@ -80,13 +79,14 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
             training=ManifestTraining(
                 classifier_name="clf_name",
                 classifier_alias="clf_alias",
+                target_classes=(0, 1),
                 feature_count=2,
                 feature_names_in=["feature_in_1", "feature_in_2"],
                 feature_names_out=["feature_out_1", "feature_out_2"],
                 tuning_enabled=False,
                 n_jobs=1,
                 calibration="none",
-                threshold_strategy="max_f1",
+                class_selection_strategy="max_f1",
                 threshold_data="training_validation",
                 threshold=0.5,
             ),
@@ -115,7 +115,6 @@ def config_factory() -> Callable[..., TrainingConfig]:
                 classifier_params={},
             ),
             calibration=CalibrationConfig(),
-            threshold=ThresholdConfig(),
             promotion=PromotionConfig(),
         )
 
@@ -340,9 +339,6 @@ def sample_config_yaml(mlflow_test_setup: dict[str, Any]) -> Path:
                 "calibration": {
                     "n_splits": 3,
                     "n_bins": 10,
-                },
-                "threshold": {
-                    "strategy": "max_f1",
                 },
                 "promotion": {
                     "min_delta": 0.005,

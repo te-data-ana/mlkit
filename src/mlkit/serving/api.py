@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 def create_app(use_case: UseCase) -> FastAPI:
     """Create an API application for an explicitly selected use case."""
     request_model = use_case.feature_schema
-    response_model = prediction_response_schema(time_column=use_case.event_time_column)
+    response_model = prediction_response_schema(
+        time_column=use_case.event_time_column,
+        target_classes=use_case.target_classes,
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncGenerator[None]:

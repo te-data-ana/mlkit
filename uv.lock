@@ -2375,7 +2375,7 @@ wheels = [
 
 [[package]]
 name = "mlkit"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -2457,7 +2457,7 @@ notebooks = [
 
 [[package]]
 name = "mlkit-use-cases"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "use_cases" }
 dependencies = [
     { name = "mlkit" },

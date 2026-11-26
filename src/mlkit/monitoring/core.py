@@ -16,6 +16,7 @@ from sklearn.metrics import precision_score, recall_score, roc_auc_score
 
 from mlkit.config import RuntimeSettings
 from mlkit.data import normalize_strings, read_jsonl_log, validate_data
+from mlkit.evaluation import align_probabilities
 from mlkit.use_cases import UseCase
 
 logger = logging.getLogger(__name__)
@@ -189,8 +190,16 @@ def _prepare_validated_df(
     if allow_undated_reference and time_column not in df:
         df[time_column] = pd.NaT
     required = set(_aggregation_columns(time_column=time_column))
+    multiclass = len(use_case.target_classes) > 2
+    probability_columns = [
+        f"predicted_probability_{value}" for value in use_case.target_classes
+    ]
     if require_predictions:
-        required.update(PREDICTION_COLUMNS)
+        required.update(
+            [PRED_CLASS_COLUMN, *probability_columns]
+            if multiclass
+            else PREDICTION_COLUMNS
+        )
     if require_target:
         required.add(use_case.target_column)
     missing = required.difference(set(df.columns))
@@ -200,25 +209,52 @@ def _prepare_validated_df(
         )
 
     if require_predictions:
-        df[PRED_PROBA_COLUMN] = pd.to_numeric(df[PRED_PROBA_COLUMN], errors="raise")
-        if not df[PRED_PROBA_COLUMN].between(0, 1).all():
-            raise ValueError(f"{name} data contains probabilities outside [0, 1].")
-        df[PRED_CLASS_COLUMN] = pd.to_numeric(
-            df[PRED_CLASS_COLUMN], errors="raise"
-        ).astype(int)
-        if not df[PRED_CLASS_COLUMN].isin([0, 1]).all():
-            raise ValueError(
-                f"{name} data contains predicted classes outside {{0, 1}}."
+        if multiclass:
+            for column in probability_columns:
+                df[column] = pd.to_numeric(df[column], errors="raise")
+            probabilities = align_probabilities(
+                probabilities=df[probability_columns].to_numpy(),
+                model_classes=use_case.target_classes,
+                target_classes=use_case.target_classes,
             )
+        else:
+            df[PRED_PROBA_COLUMN] = pd.to_numeric(df[PRED_PROBA_COLUMN], errors="raise")
+            if not df[PRED_PROBA_COLUMN].between(0, 1).all():
+                raise ValueError(f"{name} data contains probabilities outside [0, 1].")
+        df[PRED_CLASS_COLUMN] = pd.to_numeric(df[PRED_CLASS_COLUMN], errors="raise")
+        if not df[PRED_CLASS_COLUMN].isin(use_case.target_classes).all():
+            raise ValueError(
+                f"{name} data contains predicted classes outside {set(use_case.target_classes)}."
+            )
+        if multiclass and not np.array_equal(
+            df[PRED_CLASS_COLUMN].to_numpy(),
+            np.asarray(use_case.target_classes)[probabilities.argmax(axis=1)],
+        ):
+            raise ValueError(
+                f"{name} predicted classes do not match probability argmax."
+            )
+        df[PRED_CLASS_COLUMN] = df[PRED_CLASS_COLUMN].astype(int)
 
     if require_target and df[use_case.target_column].isna().any():
         raise ValueError(
             f"{name} data must contain a target label for every row / record."
         )
-    if require_target and df[use_case.target_column].nunique() < 2:
+    if require_target and set(df[use_case.target_column]) != set(
+        use_case.target_classes
+    ):
+        # description = (
+        #     "both target classes for binary classification"
+        #     if use_case.target_classes == (0, 1)
+        #     else f"all target classes {use_case.target_classes}"
+        # )
         raise ValueError(
-            f"{name} data must contain both target classes for binary classification."
+            f"{name} data must contain all target classes {use_case.target_classes}."
         )
+    if (
+        use_case.target_column in df
+        and not df[use_case.target_column].dropna().isin(use_case.target_classes).all()
+    ):
+        raise ValueError(f"{name} data contains unknown target labels.")
 
     timestamps = pd.to_datetime(df[time_column], errors="raise")
     if timestamps.isna().any() and not (
@@ -362,6 +398,7 @@ def _base_summary(
     reference: pd.DataFrame,
     analysis: pd.DataFrame,
     time_column: str,
+    target_classes: tuple[int, ...] = (0, 1),
 ) -> pd.DataFrame:
     """Aggregate the main prediction metrics for both reference and analysis cohorts.
 
@@ -376,11 +413,23 @@ def _base_summary(
     combined = pd.concat([reference, analysis], ignore_index=True)
     aggregation_columns = _aggregation_columns(time_column=time_column)
     grouped = combined.groupby(["source", *aggregation_columns], dropna=False)
-    summary = grouped.agg(
-        prediction_count=(PRED_CLASS_COLUMN, "size"),
-        avg_predicted_probability=(PRED_PROBA_COLUMN, "mean"),
-        predicted_positive_rate=(PRED_CLASS_COLUMN, "mean"),
-    ).reset_index()
+    if len(target_classes) > 2:
+        summary = grouped.agg(
+            prediction_count=(PRED_CLASS_COLUMN, "size")
+        ).reset_index()
+        for value in target_classes:
+            rates = (
+                grouped[PRED_CLASS_COLUMN]
+                .apply(lambda series, label=value: (series == label).mean())
+                .reset_index(name=f"predicted_class_{value}_rate")
+            )
+            summary = summary.merge(rates, on=["source", *aggregation_columns])
+    else:
+        summary = grouped.agg(
+            prediction_count=(PRED_CLASS_COLUMN, "size"),
+            avg_predicted_probability=(PRED_PROBA_COLUMN, "mean"),
+            predicted_positive_rate=(PRED_CLASS_COLUMN, "mean"),
+        ).reset_index()
     return summary
 
 
@@ -389,6 +438,7 @@ def _actual_metrics(
     analysis: pd.DataFrame,
     target_column: str,
     time_column: str,
+    target_classes: tuple[int, ...] = (0, 1),
 ) -> pd.DataFrame:
     """Calculate realized classification metrics from labeled input data.
 
@@ -417,6 +467,53 @@ def _actual_metrics(
             continue
         target = chunk[target_column].astype(int)
         predicted = chunk[PRED_CLASS_COLUMN].astype(int)
+        if len(target_classes) > 2:
+            row = {
+                PERIOD_COLUMN: period,
+                MODEL_VERSION_COLUMN: model_version,
+                time_column: month,
+                "realized_precision": float(
+                    precision_score(
+                        y_true=target,
+                        y_pred=predicted,
+                        labels=list(target_classes),
+                        average="macro",
+                        zero_division=0,
+                    )
+                ),
+                "realized_recall": float(
+                    recall_score(
+                        y_true=target,
+                        y_pred=predicted,
+                        labels=list(target_classes),
+                        average="macro",
+                        zero_division=0,
+                    )
+                ),
+                "realized_roc_auc": float("nan"),
+            }
+            row.update(
+                {
+                    f"observed_class_{value}_rate": float((target == value).mean())
+                    for value in target_classes
+                }
+            )
+            if set(target) == set(target_classes):
+                indicator = np.column_stack(
+                    [target == value for value in target_classes]
+                )
+                probabilities = chunk[
+                    [f"predicted_probability_{value}" for value in target_classes]
+                ].to_numpy()
+                row["realized_roc_auc"] = float(
+                    roc_auc_score(
+                        y_true=indicator,
+                        y_score=probabilities,
+                        average="macro",
+                    )
+                )
+            rows.append(row)
+            continue
         probability = chunk[PRED_PROBA_COLUMN].astype(float)
         rows.append(
             {
@@ -461,7 +558,15 @@ def _calculate_version_drift(
         drift calculations for the model version.
     """
 
+    reference = reference.copy()
+    analysis = analysis.copy()
+    errors = errors.copy()
+    for column in use_case.categorical_columns:
+        for frame in (reference, analysis, errors):
+            frame[column] = frame[column].astype("category")
     monitoring = pd.concat([analysis, errors], ignore_index=True)
+    # for column in use_case.categorical_columns:
+    #     monitoring[column] = monitoring[column].astype("category")
     time_column = use_case.event_time_column
     aggregation_columns = _aggregation_columns(time_column=time_column)
     undated_reference = reference[time_column].isna().all()
@@ -485,10 +590,31 @@ def _calculate_version_drift(
     alerts = []
 
     if use_case.target_column in reference.columns:
+        multiclass = len(use_case.target_classes) > 2
+        cbpe_reference, cbpe_analysis = reference.copy(), analysis.copy()
+        if multiclass:
+            cbpe_reference[use_case.target_column] = cbpe_reference[
+                use_case.target_column
+            ].astype(str)
+            cbpe_reference[PRED_CLASS_COLUMN] = cbpe_reference[
+                PRED_CLASS_COLUMN
+            ].astype(str)
+            cbpe_analysis[PRED_CLASS_COLUMN] = cbpe_analysis[PRED_CLASS_COLUMN].astype(
+                str
+            )
         cbpe = (
             nml.CBPE(
-                problem_type="classification_binary",
-                y_pred_proba=PRED_PROBA_COLUMN,
+                problem_type="classification_multiclass"
+                if multiclass
+                else "classification_binary",
+                y_pred_proba=(
+                    {
+                        str(value): f"predicted_probability_{value}"
+                        for value in use_case.target_classes
+                    }
+                    if multiclass
+                    else PRED_PROBA_COLUMN
+                ),
                 y_pred=PRED_CLASS_COLUMN,
                 y_true=use_case.target_column,
                 timestamp_column_name=time_column,
@@ -496,8 +622,8 @@ def _calculate_version_drift(
                 chunker=chunker,
                 chunk_period=chunk_period,
             )
-            .fit(reference)
-            .estimate(analysis)
+            .fit(cbpe_reference)
+            .estimate(cbpe_analysis)
         )
         alerts.append(
             _cbpe_summary(
@@ -754,6 +880,7 @@ def build_monitoring_report(
         reference=reference_df,
         analysis=analysis_df,
         time_column=time_column,
+        target_classes=use_case.target_classes,
     )
 
     actual = _actual_metrics(
@@ -761,6 +888,7 @@ def build_monitoring_report(
         analysis=analysis_df,
         target_column=use_case.target_column,
         time_column=time_column,
+        target_classes=use_case.target_classes,
     )
     if not actual.empty:
         summary = summary.merge(actual, on=aggregation_columns, how="left")

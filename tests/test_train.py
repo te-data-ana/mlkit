@@ -11,7 +11,7 @@ import pytest
 
 import mlkit
 from mlkit import train
-from mlkit.config.schemas import ThresholdConfig, TrainingConfig, TuningConfig
+from mlkit.config.schemas import TrainingConfig, TuningConfig
 from mlkit.data.splitting import create_data_splits, load_split_metadata
 from mlkit.training import TuningResult
 from mlkit.use_cases import get_use_case
@@ -179,9 +179,6 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
     config = SimpleNamespace(
         model=SimpleNamespace(classifier="lr"),
         calibration=SimpleNamespace(n_splits=3, n_bins=10),
-        threshold=SimpleNamespace(
-            strategy="max_f1",
-        ),
         promotion=SimpleNamespace(
             metric_weights={
                 "roc_auc": 0.2,
@@ -403,7 +400,6 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
         random_state=19,
         model=SimpleNamespace(classifier="rf"),
         calibration=SimpleNamespace(n_splits=3, n_bins=10),
-        threshold=SimpleNamespace(strategy="max_f1"),
         promotion=SimpleNamespace(
             metric_weights={
                 "roc_auc": 0.2,
@@ -538,7 +534,6 @@ def test_tuning_excludes_threshold_validation(
     config = replace(
         config_factory(classifier="dt"),
         random_state=17,
-        threshold=ThresholdConfig(),
         tuning=TuningConfig(n_trials=2, n_splits=2),
     )
     train_df = pd.DataFrame({"churn": [0, 1] * 25})
@@ -684,7 +679,6 @@ def test_registration_uses_derived_name_and_only_promotion_aliases(
     config = SimpleNamespace(
         model=SimpleNamespace(classifier="rf"),
         calibration=SimpleNamespace(n_splits=3, n_bins=10),
-        threshold=SimpleNamespace(strategy="max_f1"),
         promotion=SimpleNamespace(
             min_delta=0.005,
             metric_weights={

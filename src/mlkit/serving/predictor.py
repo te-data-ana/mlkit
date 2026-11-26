@@ -8,6 +8,7 @@ import pandas as pd
 from numpy.typing import ArrayLike
 from pydantic import BaseModel
 
+from mlkit.evaluation import align_probabilities
 from mlkit.serving.model_loader import LoadedModel, ModelMetadata
 
 logger = logging.getLogger(__name__)
@@ -16,18 +17,23 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PredictionResult:
     predicted_class: int
-    predicted_probability: float
     timestamp: datetime
     metadata: ModelMetadata
+    predicted_probability: float | None = None
+    predicted_probabilities: dict[str, float] | None = None
 
     def to_response(self, time_column: str) -> dict[str, Any]:
         """Serialize the result using the selected use case's timestamp name."""
-        return {
+        result = {
             time_column: self.timestamp,
             "predicted_class": self.predicted_class,
-            "predicted_probability": self.predicted_probability,
             "metadata": asdict(self.metadata),
         }
+        if self.predicted_probabilities is None:
+            result["predicted_probability"] = self.predicted_probability
+        else:
+            result["predicted_probabilities"] = self.predicted_probabilities
+        return result
 
 
 class Predictor:
@@ -41,8 +47,15 @@ class Predictor:
         self.model = loaded_model.model
         self.metadata = loaded_model.metadata
         self.use_case = loaded_model.use_case
+        if (
+            len(self.use_case.target_classes) > 2
+            and self.metadata.model_threshold is not None
+        ):
+            raise ValueError(
+                "Multiclass prediction requires an argmax model without a threshold."
+            )
         logger.info(
-            "Initialized predictor for model version '%s' with threshold %.4f.",
+            "Initialized predictor for model version '%s' with threshold %s.",
             self.metadata.model_version,
             self.metadata.model_threshold,
         )
@@ -99,22 +112,35 @@ class Predictor:
             df = pd.DataFrame([features.model_dump()])
             probabilities = self._to_probability_array(self.model.predict_proba(df))
 
-            predicted_probability = float(probabilities[0, 1])
-            predicted_class = int(
-                predicted_probability >= self.metadata.model_threshold
-            )
-
-            logger.info(
-                "Single-record prediction generated probability %.4f and class %d.",
-                predicted_probability,
-                predicted_class,
-            )
+            if len(self.use_case.target_classes) > 2:
+                probabilities = align_probabilities(
+                    probabilities=probabilities,
+                    model_classes=self.model.classes_,
+                    target_classes=self.use_case.target_classes,
+                )
+                predicted_class = self.use_case.target_classes[
+                    int(probabilities[0].argmax())
+                ]
+                class_probabilities = {
+                    str(label): float(probabilities[0, index])
+                    for index, label in enumerate(self.use_case.target_classes)
+                }
+                predicted_probability = None
+            else:
+                if self.metadata.model_threshold is None:
+                    raise ValueError("Binary prediction requires a decision threshold.")
+                predicted_probability = float(probabilities[0, 1])
+                predicted_class = int(
+                    predicted_probability >= self.metadata.model_threshold
+                )
+                class_probabilities = None
 
             return PredictionResult(
                 predicted_class=predicted_class,
                 predicted_probability=predicted_probability,
                 timestamp=timestamp,
                 metadata=self.metadata,
+                predicted_probabilities=class_probabilities,
             )
         except Exception:
             logger.exception("Single-record prediction failed.")
@@ -133,23 +159,31 @@ class Predictor:
         try:
             logger.info("Starting batch prediction for %d rows.", len(df))
             probabilities = self._to_probability_array(self.model.predict_proba(df))
-            predicted_probabilities = probabilities[:, 1]
-
-            predicted_classes = (
-                predicted_probabilities >= self.metadata.model_threshold
-            ).astype(int)
-
             result = df.copy()
-
-            result["predicted_probability"] = predicted_probabilities
-            result["predicted_class"] = predicted_classes
-            result["threshold"] = self.metadata.model_threshold
+            if len(self.use_case.target_classes) > 2:
+                probabilities = align_probabilities(
+                    probabilities=probabilities,
+                    model_classes=self.model.classes_,
+                    target_classes=self.use_case.target_classes,
+                )
+                for index, label in enumerate(self.use_case.target_classes):
+                    result[f"predicted_probability_{label}"] = probabilities[:, index]
+                result["predicted_class"] = np.asarray(self.use_case.target_classes)[
+                    probabilities.argmax(axis=1)
+                ]
+            else:
+                if self.metadata.model_threshold is None:
+                    raise ValueError("Binary prediction requires a decision threshold.")
+                result["predicted_probability"] = probabilities[:, 1]
+                result["predicted_class"] = (
+                    probabilities[:, 1] >= self.metadata.model_threshold
+                ).astype(int)
+                result["threshold"] = self.metadata.model_threshold
             result["model_version"] = self.metadata.model_version
 
             logger.info(
-                "Batch prediction completed for %d rows. Mean probability: %.4f.",
+                "Batch prediction completed for %d rows.",
                 len(result),
-                result["predicted_probability"].mean(),
             )
             return result
         except Exception:

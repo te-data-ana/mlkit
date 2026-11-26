@@ -84,7 +84,7 @@ def prepare_uci_snapshot(
         snapshot_dir: Directory containing feature, target and optional ID tables.
         output_path: Destination Parquet file.
         target_mappings: Explicit value mappings keyed by normalized target name.
-        use_case: Optional single-binary-target contract for validation.
+        use_case: Optional single-target classification contract for validation.
         deduplicate: Remove exact duplicate source rows after validation.
 
     Raises:
@@ -133,8 +133,10 @@ def prepare_uci_snapshot(
 
     if use_case is not None:
         target = targets[use_case.target_column]
-        if target.isna().any() or not target.isin([0, 1]).all():
-            raise ValueError("Use-case target labels must be 0 or 1.")
+        if target.isna().any() or not target.isin(use_case.target_classes).all():
+            raise ValueError(
+                f"Use-case target labels must be among {use_case.target_classes}."
+            )
     frame = pd.concat([table.reset_index(drop=True) for table in tables], axis=1)
     if use_case is not None:
         frame = use_case.validate(df=frame)

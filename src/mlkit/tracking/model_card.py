@@ -79,9 +79,18 @@ class ModelCardBuilder:
             "random stratified test set" if random_split else "out-of-time test set"
         )
         threshold_note = (
-            "The decision threshold was selected by maximizing F1 on the "
-            "independent validation cohort. The estimator was fitted only on "
-            "the fitting cohort."
+            (
+                "The decision threshold was selected by maximizing F1 on the "
+                "independent validation cohort. The estimator was fitted only on "
+                "the fitting cohort."
+            )
+            if context.training.threshold is not None
+            else ("The predicted class is the class with the highest probability.")
+        )
+        threshold_value = (
+            f"{context.training.threshold:.6f}"
+            if context.training.threshold is not None
+            else "Not applicable"
         )
 
         features = "\n".join(
@@ -161,9 +170,9 @@ Trained on {context.model.use_case} data.
 | Property | Value |
 |----------|-------|
 | Calibration Method | {context.training.calibration} |
-| Threshold Selection Strategy | {context.training.threshold_strategy} |
+| Class Selection Strategy | {context.training.class_selection_strategy} |
 | Threshold Selection Data | {context.training.threshold_data} |
-| Optimal Class Threshold | {context.training.threshold:.6f} |
+| Optimal Class Threshold | {threshold_value} |
 
 Note: {threshold_note}
 

@@ -56,10 +56,11 @@ def run_batch_prediction(
         df_pred = predictor.predict_batch(df=df)
 
         logger.info("Generated %d predictions.", len(df_pred))
-        logger.info(
-            "Average positive-class probability: %.4f",
-            df_pred["predicted_probability"].mean(),
-        )
+        if "predicted_probability" in df_pred:
+            logger.info(
+                "Average positive-class probability: %.4f",
+                df_pred["predicted_probability"].mean(),
+            )
         return df_pred
     except Exception:
         logger.exception("Batch prediction failed.")

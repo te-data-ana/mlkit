@@ -1,0 +1,204 @@
+schema: '2.0'
+stages:
+  serve_samples:
+    cmd: DATA_DIR=$PWD/data/students LOGGING_DIR=$PWD/data/students/api_logs
+      LOG_FEATURES=True uv run python -m mlkit.serving.serve_samples --use_case
+      students --input_parquet splits/oos-42_monitoring.parquet --model_manifest
+      manifests/students-lr-oos-42.json --sample_size 400 --random_state 42
+      --monitoring_random_state inherit --timestamp 2026-10-01 --drop_columns
+      target
+    deps:
+    - path: data/students/manifests/students-lr-oos-42.json
+      hash: md5
+      md5: 74448dff83436f3e9bf8e114156efc7a
+      size: 10825
+    - path: data/students/splits/oos-42_monitoring.parquet
+      hash: md5
+      md5: aada4bfc032961de4c4ec1d7ed15123f
+      size: 37860
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        model.classifier: lr
+        monitoring.sample_date: '2026-10-01'
+        random_state: 42
+        seeds.monitoring: inherit
+        split.name: oos-42
+        use_case: students
+    outs:
+    - path: data/students/api_logs
+      hash: md5
+      md5: 65ee2943bd3d4c56baf3879983e8c7da.dir
+      size: 565667
+      nfiles: 1
+  ingest_prediction_logs:
+    cmd: DATA_DIR=$PWD/data/students LOGGING_DIR=$PWD/data/students/api_logs uv
+      run mlkit ingest-prediction-logs --use_case students --dataset_name
+      api_predictions
+    deps:
+    - path: data/students/api_logs
+      hash: md5
+      md5: 65ee2943bd3d4c56baf3879983e8c7da.dir
+      size: 565667
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        monitoring.analysis_dataset: api_predictions
+        use_case: students
+    outs:
+    - path: data/students/api_predictions
+      hash: md5
+      md5: 1bb9b0180396db62cb4b07ce7b48fa8c.dir
+      size: 70673
+      nfiles: 1
+  ingest_error_logs:
+    cmd: DATA_DIR=$PWD/data/students LOGGING_DIR=$PWD/data/students/api_logs uv
+      run mlkit ingest-error-logs --use_case students --dataset_name api_errors
+    deps:
+    - path: data/students/api_logs
+      hash: md5
+      md5: 65ee2943bd3d4c56baf3879983e8c7da.dir
+      size: 565667
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit/data
+      hash: md5
+      md5: 21547fd38920dc99033ac89be3a2c222.dir
+      size: 47586
+      nfiles: 9
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        monitoring.error_dataset: api_errors
+        use_case: students
+    outs:
+    - path: data/students/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+  monitor:
+    cmd: DATA_DIR=$PWD/data/students uv run mlkit monitor --use_case students
+      --reference_dataset predictions/students_lr_oos-42 --analysis_dataset
+      api_predictions --error_dataset api_errors --source_reference batch
+      --source_analysis api --model_manifest manifests/students-lr-oos-42.json
+      --output_dir data/students/monitoring/students_lr_oos-42
+      --mlflow_experiment_name students-monitoring --run_name students_lr_oos-42
+    deps:
+    - path: data/students/api_errors
+      hash: md5
+      md5: d751713988987e9331980363e24189ce.dir
+      size: 0
+      nfiles: 0
+    - path: data/students/api_predictions
+      hash: md5
+      md5: 1bb9b0180396db62cb4b07ce7b48fa8c.dir
+      size: 70673
+      nfiles: 1
+    - path: data/students/manifests/students-lr-oos-42.json
+      hash: md5
+      md5: 74448dff83436f3e9bf8e114156efc7a
+      size: 10825
+    - path: data/students/predictions/students_lr_oos-42
+      hash: md5
+      md5: 111826def21653a822e9f65aa41791f9.dir
+      size: 52533
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        model.classifier: lr
+        monitoring:
+          sample_date: '2026-10-01'
+          reference_dataset: predictions
+          analysis_dataset: api_predictions
+          error_dataset: api_errors
+          source_reference: batch
+          source_analysis: api
+        split.name: oos-42
+        use_case: students
+    outs:
+    - path: data/students/monitoring/students_lr_oos-42
+      hash: md5
+      md5: 34ac66c858090c62f1980725a35c6f5b.dir
+      size: 703
+      nfiles: 1

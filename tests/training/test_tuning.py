@@ -11,12 +11,39 @@ from mlkit.config.schemas import TrainingConfig, TuningConfig
 from mlkit.models import MODEL_CATALOG, create_model
 from mlkit.training import tuning
 from mlkit.training.tuning import (
+    _align_decision_scores,
     _suggest_parameters,
     optimize_hyperparameters,
 )
 from mlkit.use_cases import get_use_case
 
 CHURN_USE_CASE = get_use_case("churn")
+
+
+@pytest.mark.unit
+def test_align_decision_scores_reorders_classes() -> None:
+    scores = _align_decision_scores(
+        scores=[[2.0, -1.0, 0.5]],
+        model_classes=[2, 0, 1],
+        target_classes=(0, 1, 2),
+    )
+    np.testing.assert_array_equal(scores, [[-1.0, 0.5, 2.0]])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("scores", "model_classes"),
+    [
+        ([0.1, 0.2, 0.3], [0, 1, 2]),
+        ([[0.1, 0.2]], [0, 1, 2]),
+        ([[0.1, 0.2, 0.3]], [0, 1, 3]),
+    ],
+)
+def test_align_decision_scores_rejects_mismatched_classes(
+    scores: list[float] | list[list[float]], model_classes: list[int]
+) -> None:
+    with pytest.raises(ValueError, match="one column per target class"):
+        _align_decision_scores(scores, model_classes, (0, 1, 2))
 
 
 @pytest.mark.unit

@@ -25,12 +25,19 @@ def read_jsonl_log(jsonl_path: Path) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
-    if "features" not in df.columns:
+    if "predicted_probabilities" in df.columns:
+        probabilities = pd.json_normalize(df.pop("predicted_probabilities"))
+        probabilities.columns = [
+            f"predicted_probability_{name}" for name in probabilities.columns
+        ]
+        if set(probabilities.columns).intersection(df.columns):
+            raise ValueError(
+                "Prediction probability columns overlap existing event fields."
+            )
+        df = pd.concat([df, probabilities], axis=1)
+
+    if "features" in df.columns:
+        features = pd.json_normalize(df.pop("features"))
+        return pd.concat([df, features], axis=1)
+    else:
         return df
-
-    features = pd.json_normalize(df["features"])
-
-    return pd.concat(
-        [df.drop(columns=["features"]), features],
-        axis=1,
-    )

@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -122,12 +123,11 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
     assert logged_parameter_values["random_state"] == 42
     assert logged_parameter_values["imputer_numeric"] == "mean"
     assert logged_parameter_values["calibration_method"] == "sigmoid"
-    assert logged_parameter_values["threshold_strategy"] == "max_f1"
+    assert logged_parameter_values["class_selection_strategy"] == "max_f1"
     assert logged_parameter_values["model_tuning_enabled"] is True
     assert logged_parameter_values["model_registration_enabled"] is True
     assert logged_parameter_values["model_promotion_enabled"] is True
-    assert "threshold" in logged_parameters
-    assert "threshold_data" in logged_parameters
+    assert "class_threshold" in logged_parameters
     assert "promotion_weight_roc_auc" in logged_parameters
     assert "promotion_min_delta" in logged_parameters
     mock_set_tags.assert_called_once()
@@ -142,6 +142,62 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
     assert "Logging calibration reliability diagram to MLflow." in caplog.text
     assert "Logging fitted model pipeline to MLflow." in caplog.text
     assert "Logging training configuration artifact" in caplog.text
+
+
+@pytest.mark.unit
+def test_log_experiment_result_uses_multiclass_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_config_yaml: Path,
+    mock_training_result: TrainingResult,
+    config_factory: Callable[..., TrainingConfig],
+) -> None:
+    log_params = MagicMock()
+    monkeypatch.setattr(tracking.mlflow, "log_params", log_params)
+    for name in ("set_tags", "log_metrics", "log_figure", "log_artifact"):
+        monkeypatch.setattr(tracking.mlflow, name, MagicMock())
+    monkeypatch.setattr(tracking.mlflow.sklearn, "log_model", MagicMock())
+    result = replace(
+        mock_training_result, threshold=None, threshold_data="not_applicable"
+    )
+    tracking.log_experiment_result(
+        use_case=get_use_case("students"),
+        result=result,
+        config=config_factory(),
+        config_file_path=sample_config_yaml,
+        calibration_method="none",
+        tune_model=False,
+        register_model=False,
+        promote_model=False,
+    )
+    params = {
+        key: value
+        for call in log_params.call_args_list
+        for key, value in call.args[0].items()
+    }
+    assert params["class_selection_strategy"] == "argmax"
+    assert "class_threshold" not in params
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("name", "threshold"), [("churn", None), ("students", 0.4)])
+def test_log_experiment_result_rejects_inconsistent_threshold(
+    name: str,
+    threshold: float | None,
+    sample_config_yaml: Path,
+    mock_training_result: TrainingResult,
+    config_factory: Callable[..., TrainingConfig],
+) -> None:
+    with pytest.raises(ValueError, match="threshold"):
+        tracking.log_experiment_result(
+            use_case=get_use_case(name),
+            result=replace(mock_training_result, threshold=threshold),
+            config=config_factory(),
+            config_file_path=sample_config_yaml,
+            calibration_method="none",
+            tune_model=False,
+            register_model=False,
+            promote_model=False,
+        )
 
 
 @pytest.mark.unit
@@ -288,4 +344,4 @@ def test_logged_calibrated_model_can_be_reloaded(
     )
 
     assert probabilities.shape == (len(test_df), 2)
-    assert logged_run.data.params["threshold_data"] == "training_validation"
+    assert logged_run.data.tags["threshold_selection"] == "training_validation"

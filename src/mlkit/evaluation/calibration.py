@@ -1,5 +1,6 @@
 """Calibration diagnostic helpers."""
 
+import numpy as np
 from matplotlib.figure import Figure
 from numpy.typing import ArrayLike
 from sklearn.calibration import calibration_curve
@@ -10,6 +11,7 @@ def reliability_diagram(
     y_prob: ArrayLike,
     *,
     n_bins: int,
+    classes: tuple[int, ...] | None = None,
 ) -> Figure:
     """Build a reliability diagram for observed and predicted probabilities.
 
@@ -22,21 +24,22 @@ def reliability_diagram(
     Returns:
         A Matplotlib figure suitable for logging as an MLflow artifact.
     """
-    fraction_positive, mean_predicted = calibration_curve(
-        y_true=y_true,
-        y_prob=y_prob,
-        n_bins=n_bins,
-        strategy="uniform",
-    )
     figure = Figure(figsize=(6, 6))
     axes = figure.subplots()
     axes.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Perfect calibration")
-    axes.plot(
-        mean_predicted,
-        fraction_positive,
-        marker="o",
-        label="Model",
-    )
+    if classes is None:
+        curves = [("Model", y_true, y_prob)]
+    else:
+        labels, probabilities = np.asarray(y_true), np.asarray(y_prob)
+        curves = [
+            (str(value), labels == value, probabilities[:, index])
+            for index, value in enumerate(classes)
+        ]
+    for label, actual, probability in curves:
+        fraction_positive, mean_predicted = calibration_curve(
+            y_true=actual, y_prob=probability, n_bins=n_bins, strategy="uniform"
+        )
+        axes.plot(mean_predicted, fraction_positive, marker="o", label=label)
     axes.set(
         xlabel="Mean predicted probability",
         ylabel="Fraction of positives",

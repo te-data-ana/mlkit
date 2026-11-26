@@ -34,6 +34,22 @@ ALTERNATE_USE_CASE = UseCase(
 )
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("classes", "strategy"),
+    [
+        ((0, 1), "max_f1"),
+        ((2, 0, 1), "argmax"),
+        ((10, 5, 2, 7), "argmax"),
+    ],
+)
+def test_class_selection_strategy_follows_target_classes(
+    classes: tuple[int, ...], strategy: str
+) -> None:
+    use_case = replace(ALTERNATE_USE_CASE, target_classes=classes)
+    assert use_case.class_selection_strategy == strategy
+
+
 def test_split_strategy_contract_validates_time_and_event_metadata() -> None:
     random_case = replace(
         ALTERNATE_USE_CASE, time_column=None, split_strategy="stratified_random"

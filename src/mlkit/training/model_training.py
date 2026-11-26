@@ -13,7 +13,9 @@ from threadpoolctl import threadpool_limits
 from mlkit.config.schemas import TrainingConfig
 from mlkit.evaluation import (
     Timer,
+    align_probabilities,
     evaluate_model,
+    evaluate_multiclass_model,
     reliability_diagram,
     select_f1_threshold,
 )
@@ -36,7 +38,7 @@ class TrainingResult:
     classifier_config: dict[str, Any]
     feature_names_in: list[str]
     feature_names_out: list[str]
-    threshold: float
+    threshold: float | None
     threshold_data: str
     calibration_figure: Figure
 
@@ -56,7 +58,7 @@ def train_model(
     Args:
         use_case: Explicit data contract to be used for model training.
         config: Training, feature, preprocessing, model, calibration-fold,
-            threshold, promotion, and registry settings.
+            promotion, and registry settings.
         fit_df: Validated fitting DataFrame containing features and target.
         validation_df: Independent training holdout for threshold selection.
         test_df: Validated test DataFrame containing features and target.
@@ -107,8 +109,8 @@ def train_model(
             data_name="Test",
         )
         y_test = test_df[target_column]
-        if y_train.nunique() != 2:
-            raise ValueError("Training data must contain both target classes.")
+        if set(y_train) != set(use_case.target_classes):
+            raise ValueError("Training data must contain all target classes.")
         logger.info(
             "Prepared training data: %d rows and %d features; test "
             "data: %d rows and %d features (target '%s').",
@@ -163,16 +165,21 @@ def train_model(
             )
         logger.info("Model pipeline fit completed in %.3f seconds.", fit_timer.duration)
 
-        logger.info(
-            "Selecting decision threshold with strategy '%s' on training validation.",
-            config.threshold.strategy,
-        )
-        y_proba_validation = trained_model.predict_proba(X_validation)[:, 1]
-        threshold = select_f1_threshold(
-            y_true=y_validation,
-            y_prob=y_proba_validation,
-        )
-        logger.info("Selected decision threshold %.6f.", threshold)
+        multiclass = use_case.class_selection_strategy == "argmax"
+        if multiclass:
+            threshold = None
+            threshold_data = "not_applicable"
+        else:
+            logger.info(
+                "Selecting decision threshold with strategy '%s' on training validation.",
+                use_case.class_selection_strategy,
+            )
+            y_proba_validation = trained_model.predict_proba(X_validation)[:, 1]
+            threshold = select_f1_threshold(
+                y_true=y_validation, y_prob=y_proba_validation
+            )
+            threshold_data = "training_validation"
+            logger.info("Selected decision threshold %.6f.", threshold)
 
         fitted_base_pipeline = (
             trained_model.calibrated_classifiers_[0].estimator
@@ -191,25 +198,46 @@ def train_model(
         )
 
         with Timer() as pred_timer:
-            y_proba = trained_model.predict_proba(X_test)[:, 1]
+            probabilities = trained_model.predict_proba(X_test)
+            y_proba = (
+                align_probabilities(
+                    probabilities=probabilities,
+                    model_classes=trained_model.classes_,
+                    target_classes=use_case.target_classes,
+                )
+                if multiclass
+                else probabilities[:, 1]
+            )
         logger.info(
             "Prediction on test set completed in %.3f seconds.", pred_timer.duration
         )
 
         logger.info("Evaluating model on test data.")
-        metrics = evaluate_model(
-            y_true=y_test,
-            y_prob=y_proba,
-            threshold=threshold,
-            calibration_bins=config.calibration.n_bins,
-            fit_time_sec=fit_timer.duration,
-            pred_time_sec=pred_timer.duration,
-        )
+        if multiclass:
+            metrics = evaluate_multiclass_model(
+                y_true=y_test,
+                y_prob=y_proba,
+                classes=use_case.target_classes,
+                calibration_bins=config.calibration.n_bins,
+                fit_time_sec=fit_timer.duration,
+                pred_time_sec=pred_timer.duration,
+            )
+        else:
+            assert threshold is not None
+            metrics = evaluate_model(
+                y_true=y_test,
+                y_prob=y_proba,
+                threshold=threshold,
+                calibration_bins=config.calibration.n_bins,
+                fit_time_sec=fit_timer.duration,
+                pred_time_sec=pred_timer.duration,
+            )
         logger.info("Evaluation metrics: %s", vars(metrics))
         calibration_figure = reliability_diagram(
             y_test,
             y_proba,
             n_bins=config.calibration.n_bins,
+            classes=use_case.target_classes if multiclass else None,
         )
         logger.info(
             "Prepared calibration reliability diagram with %d bins.",
@@ -222,7 +250,7 @@ def train_model(
             feature_names_in=list(X_train.columns),
             feature_names_out=feature_names_out,
             threshold=threshold,
-            threshold_data="training_validation",
+            threshold_data=threshold_data,
             calibration_figure=calibration_figure,
         )
     except Exception:

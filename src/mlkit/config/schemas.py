@@ -45,16 +45,6 @@ class CalibrationConfig:
 
 
 @dataclass
-class ThresholdConfig:
-    strategy: str = "max_f1"
-
-    def __post_init__(self) -> None:
-        """Validate threshold selection settings."""
-        if self.strategy != "max_f1":
-            raise ValueError("threshold strategy currently supports only 'max_f1'.")
-
-
-@dataclass
 class PromotionConfig:
     min_delta: float = 0.005
     metric_weights: dict[str, float] = field(
@@ -121,7 +111,6 @@ class TrainingConfig:
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     tuning: TuningConfig = field(default_factory=TuningConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
-    threshold: ThresholdConfig = field(default_factory=ThresholdConfig)
     promotion: PromotionConfig = field(default_factory=PromotionConfig)
 
     def __post_init__(self) -> None:

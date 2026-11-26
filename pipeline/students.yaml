@@ -1,0 +1,36 @@
+use_case: students
+dataset_id: 697
+random_state: 42
+
+seeds:
+  preparation: inherit
+  split: inherit
+  training: inherit
+  classifier: inherit
+  monitoring: inherit
+
+split:
+  name: oos-42
+  validation_fraction: 0.0
+  test_fraction: 0.2
+  monitoring_fraction: 0.2
+
+model:
+  classifier: lr
+  register_model: true
+  promote_model: false
+
+training:
+  n_jobs: 8
+  tune_model: true
+
+calibration:
+  method: isotonic
+
+monitoring:
+  sample_date: '2026-11-01'
+  reference_dataset: predictions
+  analysis_dataset: api_predictions
+  error_dataset: api_errors
+  source_reference: batch
+  source_analysis: api

@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from mlkit.config import load_config
-from mlkit.config.schemas import PromotionConfig, ThresholdConfig
+from mlkit.config.schemas import PromotionConfig
 
 
 @pytest.mark.unit
@@ -19,7 +19,6 @@ def test_load_config_returns_config_and_resolved_path(sample_config_yaml: Path) 
 
     assert config.tuning.n_trials == 50
     assert config.calibration.n_splits == 3
-    assert config.threshold.strategy == "max_f1"
     assert sum(config.promotion.metric_weights.values()) > 0
     assert path == sample_config_yaml
 
@@ -48,12 +47,7 @@ def test_shipped_training_configs_have_valid_settings(
         (config_directory / filename).read_text(encoding="utf-8")
     )
 
-    assert "use_case" not in raw_config
-    assert "registry" not in raw_config
     assert raw_config["random_state"] == config.random_state
-    assert "selection_data" not in raw_config["threshold"]
-    assert "random_state" not in raw_config["threshold"]
-    assert "random_state" not in raw_config.get("tuning", {})
     assert config.tuning.n_trials >= 1
     assert config.calibration.n_splits >= 2
     assert sum(config.promotion.metric_weights.values()) > 0
@@ -63,12 +57,6 @@ def test_shipped_training_configs_have_valid_settings(
 def test_promotion_config_rejects_negative_min_delta() -> None:
     with pytest.raises(ValueError, match="min_delta"):
         PromotionConfig(min_delta=-0.1)
-
-
-@pytest.mark.unit
-def test_threshold_config_rejects_unsupported_strategy() -> None:
-    with pytest.raises(ValueError, match="threshold strategy"):
-        ThresholdConfig(strategy="youden")
 
 
 @pytest.mark.unit

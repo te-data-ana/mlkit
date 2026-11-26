@@ -13,7 +13,7 @@ class ModelMetadata:
     model_name: str
     model_alias: str | None
     model_version: int | None
-    model_threshold: float
+    model_threshold: float | None
     model_reference: LoggedModelReference | None = None
 
 
@@ -64,6 +64,19 @@ def load_model(
             f"Training manifest selects use case '{manifest.model.use_case}', but "
             f"'{use_case.name}' was supplied."
         )
+    if (
+        manifest is not None
+        and manifest.training.target_classes != use_case.target_classes
+    ):
+        raise ValueError("Training manifest target classes do not match the use case.")
+    if (
+        manifest is not None
+        and manifest.training.class_selection_strategy
+        != use_case.class_selection_strategy
+    ):
+        raise ValueError(
+            "Training manifest class selection strategy does not match the use case."
+        )
 
     settings = settings or ServingSettings()
     tracking_uri = (
@@ -98,7 +111,7 @@ def load_model(
         else:
             registered_model = registry.load_registered_model(
                 model_name=model_name,
-                expected_use_case=use_case.name,
+                expected_use_case=use_case,
                 model_version=model_version,
             )
             model = registered_model.model
@@ -107,7 +120,7 @@ def load_model(
             model_alias = None
         registered_model = registry.load_registered_model(
             model_name=model_name,
-            expected_use_case=use_case.name,
+            expected_use_case=use_case,
             model_alias=model_alias,
             model_version=model_version,
         )

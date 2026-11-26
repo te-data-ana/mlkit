@@ -159,7 +159,7 @@ def test_temporal_cv_rejects_single_class_in_any_fold(labels: list[int]) -> None
         }
     )
 
-    with pytest.raises(ValueError, match="both target classes"):
+    with pytest.raises(ValueError, match="all target classes"):
         make_temporal_cv_splits(
             data,
             target_column="target",

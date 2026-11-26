@@ -7,8 +7,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from mlkit.evaluation import align_probabilities
 from mlkit.serving.predictor import PredictionResult, Predictor
-from mlkit.serving.schemas import PredictionErrorEvent, PredictionEvent
+from mlkit.serving.schemas import (
+    MulticlassPredictionEvent,
+    PredictionErrorEvent,
+    PredictionEvent,
+)
 from mlkit.use_cases import UseCase
 
 
@@ -41,22 +46,43 @@ class PredictionLogger:
 
         flag_features = self.log_features and features is not None
 
-        event = PredictionEvent(
-            request_id=request_id,
-            timestamp=prediction.timestamp,
-            latency_ms=latency_ms,
-            model_name=prediction.metadata.model_name,
-            model_alias=prediction.metadata.model_alias,
-            model_version=prediction.metadata.model_version,
-            predicted_class=prediction.predicted_class,
-            predicted_probability=prediction.predicted_probability,
-            threshold=prediction.metadata.model_threshold,
-            features=self._feature_mapping(features) if flag_features else None,
-        )
+        common = {
+            "request_id": request_id,
+            "timestamp": prediction.timestamp,
+            "latency_ms": latency_ms,
+            "model_name": prediction.metadata.model_name,
+            "model_alias": prediction.metadata.model_alias,
+            "model_version": prediction.metadata.model_version,
+            "predicted_class": prediction.predicted_class,
+            "features": self._feature_mapping(features) if flag_features else None,
+        }
+        if prediction.predicted_probabilities is None:
+            event = PredictionEvent(
+                **common,
+                predicted_probability=prediction.predicted_probability,
+                threshold=prediction.metadata.model_threshold,
+            )
+        else:
+            classes = self.use_case.target_classes
+            probabilities = prediction.predicted_probabilities
+            if set(probabilities) != {str(value) for value in classes}:
+                raise ValueError(
+                    "Prediction probabilities do not cover the declared target classes."
+                )
+            aligned = align_probabilities(
+                probabilities=[[probabilities[str(value)] for value in classes]],
+                model_classes=classes,
+                target_classes=classes,
+            )
+            if prediction.predicted_class != classes[int(aligned[0].argmax())]:
+                raise ValueError("Predicted class does not match probability argmax.")
+            event = MulticlassPredictionEvent(
+                **common, predicted_probabilities=probabilities
+            )
 
         self._append_jsonl(
-            self.prediction_log_path,
-            self._event_record(event),
+            path=self.prediction_log_path,
+            record=self._event_record(event=event),
         )
 
     def log_error(
@@ -91,7 +117,7 @@ class PredictionLogger:
         )
 
     def _event_record(
-        self, event: PredictionEvent | PredictionErrorEvent
+        self, event: PredictionEvent | MulticlassPredictionEvent | PredictionErrorEvent
     ) -> dict[str, Any]:
         record = event.model_dump(mode="json", exclude_none=True)
         record[self.use_case.event_time_column] = record.pop("timestamp")

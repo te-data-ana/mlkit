@@ -7,10 +7,12 @@ from typing import Any
 import numpy as np
 import optuna
 import pandas as pd
+from numpy.typing import ArrayLike
 from sklearn.metrics import average_precision_score, roc_auc_score
 from threadpoolctl import threadpool_limits
 
 from mlkit.config.schemas import TrainingConfig
+from mlkit.evaluation import align_probabilities
 from mlkit.models import MODEL_CATALOG, build_classifier_pipeline, create_model
 from mlkit.training.calibration import make_cv_splits
 from mlkit.training.features import select_feature_columns
@@ -29,6 +31,27 @@ class TuningResult:
     n_trials: int
     n_splits: int
     time_column: str | None
+
+
+def _align_decision_scores(
+    scores: ArrayLike,
+    model_classes: ArrayLike,
+    target_classes: tuple[int, ...],
+) -> np.ndarray:
+    """Align multiclass decision scores to the declared class order."""
+    scores_array = np.asarray(scores)
+    classes = np.asarray(model_classes)
+    if (
+        scores_array.ndim != 2
+        or scores_array.shape[1] != len(classes)
+        or set(classes) != set(target_classes)
+    ):
+        raise ValueError(
+            "Multiclass decision scores must have one column per target class."
+        )
+    return scores_array[
+        :, [int(np.flatnonzero(classes == value)[0]) for value in target_classes]
+    ]
 
 
 def _suggest_parameters(
@@ -147,15 +170,54 @@ def optimize_hyperparameters(
                 y=fold_train_targets,
             )
             if hasattr(pipeline, "predict_proba"):
-                ranking_scores = pipeline.predict_proba(fold_validation_features)[:, 1]
+                probabilities = pipeline.predict_proba(fold_validation_features)
+                ranking_scores = (
+                    align_probabilities(
+                        probabilities=probabilities,
+                        model_classes=pipeline.classes_,
+                        target_classes=use_case.target_classes,
+                    )
+                    if len(use_case.target_classes) > 2
+                    else probabilities[:, 1]
+                )
             elif hasattr(pipeline, "decision_function"):
                 ranking_scores = pipeline.decision_function(fold_validation_features)
+                if len(use_case.target_classes) > 2:
+                    if (
+                        getattr(
+                            pipeline.named_steps["classifier"],
+                            "decision_function_shape",
+                            None,
+                        )
+                        == "ovo"
+                    ):
+                        raise ValueError(
+                            "Multiclass tuning requires one-vs-rest decision scores, not one-vs-one scores."
+                        )
+                    ranking_scores = _align_decision_scores(
+                        scores=ranking_scores,
+                        model_classes=pipeline.classes_,
+                        target_classes=use_case.target_classes,
+                    )
             else:
                 raise ValueError(
                     f"Classifier '{config.model.classifier}' supports neither "
                     "predict_proba nor decision_function for ranking metrics."
                 )
-            fold_scores.append(float(metric(fold_validation_targets, ranking_scores)))
+            if len(use_case.target_classes) > 2:
+                targets = np.column_stack(
+                    [
+                        fold_validation_targets.to_numpy() == value
+                        for value in use_case.target_classes
+                    ]
+                )
+                fold_scores.append(
+                    float(metric(targets, ranking_scores, average="macro"))
+                )
+            else:
+                fold_scores.append(
+                    float(metric(fold_validation_targets, ranking_scores))
+                )
         return float(np.mean(fold_scores))
 
     logger.info(

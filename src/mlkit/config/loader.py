@@ -7,7 +7,6 @@ from mlkit.config.schemas import (
     ClassifierConfig,
     PreprocessingConfig,
     PromotionConfig,
-    ThresholdConfig,
     TrainingConfig,
     TrainingSeedOverrides,
     TuningConfig,
@@ -52,6 +51,5 @@ def load_config(
         preprocessing=PreprocessingConfig(**raw["preprocessing"]),
         tuning=TuningConfig(**raw.get("tuning", {})),
         calibration=CalibrationConfig(**raw.get("calibration", {})),
-        threshold=ThresholdConfig(**raw.get("threshold", {})),
         promotion=PromotionConfig(**raw.get("promotion", {})),
     ), config_file_path

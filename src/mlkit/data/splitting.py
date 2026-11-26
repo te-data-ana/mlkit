@@ -167,13 +167,13 @@ def _fractions(
     validation, test, monitoring = (Decimal(str(value)) for value in values)
     if (
         not all(value.is_finite() for value in (validation, test, monitoring))
-        or validation <= 0
+        or validation < 0
         or test <= 0
         or monitoring < 0
         or validation + test + monitoring >= 1
     ):
         raise ValueError(
-            "Validation and test fractions must be positive, monitoring fraction "
+            "Test fraction must be positive, validation and monitoring fractions "
             "nonnegative, and their sum less than one."
         )
     return {
@@ -288,10 +288,10 @@ def create_data_splits(
     if (
         target not in df
         or df[target].isna().any()
-        or set(df[target].unique()) != {0, 1}
+        or set(df[target].unique()) != set(use_case.target_classes)
     ):
         raise ValueError(
-            "Splitting requires a non-missing binary target with both classes."
+            f"Splitting requires a non-missing target with all classes {use_case.target_classes}."
         )
     if use_case.split_strategy == "temporal":
         if use_case.time_column is None:
@@ -305,10 +305,10 @@ def create_data_splits(
         raise ValueError(f"Unsupported split strategy: {use_case.split_strategy}")
     for name in COHORTS:
         part = parts[name]
-        if fractions[name] > 0 and (part.empty or set(part[target].unique()) != {0, 1}):
-            raise ValueError(
-                f"Nonempty {name} cohort must contain both binary classes."
-            )
+        if fractions[name] > 0 and (
+            part.empty or set(part[target].unique()) != set(use_case.target_classes)
+        ):
+            raise ValueError(f"Nonempty {name} cohort must contain all target classes.")
 
     values: dict[str, object] = {"strategy": use_case.split_strategy}
     if use_case.split_strategy == "stratified_random":

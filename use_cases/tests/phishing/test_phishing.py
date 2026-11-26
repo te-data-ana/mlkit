@@ -208,13 +208,13 @@ def test_phishing_training_uses_one_holdout_with_independent_seeds(
     assert run.data.params["root_random_state"] == "19"
     assert run.data.params["classifier_random_state"] == "29"
     assert run.data.params["training_random_state"] == "37"
-    assert run.data.params["threshold_data"] == "training_validation"
     assert run.data.params["split_strategy"] == "stratified_random"
     assert run.data.params["split_random_state"] == "7"
     assert run.data.params["split_test_fraction"] == "0.1"
     assert run.data.params["split_monitoring_fraction"] == "0.1"
     assert run.data.params["split_fit_rows"] == "70"
     assert run.data.params["split_validation_rows"] == "10"
+    assert run.data.tags["threshold_selection"] == "training_validation"
     manifest = TrainingManifest.read(tmp_path / "manifests/phishing-lr-s.json")
     assert manifest.data.time_column is None
     expected_split_metadata = {

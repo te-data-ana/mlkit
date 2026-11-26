@@ -27,6 +27,7 @@ def normalize_strings(seq: Sequence[str]) -> Sequence[str]:
     for name in seq:
         name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name.strip())
         name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+        name = re.sub(r"('|\(|\))+", "", name)
         normalized.append(re.sub(r"(\s|-|/|\.|:)+", "_", name).lower())
     return normalized
 

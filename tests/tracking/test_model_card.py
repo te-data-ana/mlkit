@@ -37,7 +37,7 @@ def test_build_model_card_from_training_manifest(
     assert f"| Classifier Alias | {context.training.classifier_alias} |" in markdown
     assert f"| Classifier Name | {context.training.classifier_name} |" in markdown
     assert "| Calibration Method | none |" in markdown
-    assert "| Threshold Selection Strategy | max_f1 |" in markdown
+    assert "| Class Selection Strategy | max_f1 |" in markdown
     assert "| Threshold Selection Data | training_validation |" in markdown
     assert "| Fitting Cohort Records | 80 |" in markdown
     assert "| Threshold Cohort Records | 20 |" in markdown
@@ -47,6 +47,28 @@ def test_build_model_card_from_training_manifest(
     assert re.search(r"\| ROC AUC \| \d\.\d{4} \|", markdown)
     assert re.search(r"\| Calibration Error \(ECE\) \| \d\.\d{4} \|", markdown)
     assert re.search(r"\| Accuracy \| \d\.\d{4} \|", markdown)
+
+
+@pytest.mark.unit
+def test_build_multiclass_model_card(
+    config_factory: Callable[..., TrainingConfig],
+    training_manifest_factory: Callable[..., TrainingManifest],
+) -> None:
+    manifest = training_manifest_factory()
+    manifest = replace(
+        manifest,
+        training=replace(
+            manifest.training,
+            target_classes=(0, 1, 2),
+            class_selection_strategy="argmax",
+            threshold=None,
+            threshold_data="not_applicable",
+        ),
+    )
+    markdown = ModelCardBuilder().build(config=config_factory(), context=manifest)
+    assert "| Class Selection Strategy | argmax |" in markdown
+    assert "| Optimal Class Threshold | Not applicable |" in markdown
+    assert "predicted class is the class with the highest probability" in markdown
 
 
 @pytest.mark.unit

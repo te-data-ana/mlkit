@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from mlkit.evaluation import metrics
+from mlkit.evaluation.metrics import align_probabilities, evaluate_multiclass_model
 
 
 @pytest.mark.unit
@@ -70,3 +71,34 @@ def test_evaluate_model_calibration_error_on_bin_boundaries(
         y_true=labels, y_prob=probabilities, threshold=0.5, calibration_bins=bins
     )
     assert evaluation.calibration_error == pytest.approx(expected)
+
+
+@pytest.mark.unit
+def test_multiclass_probabilities_and_metrics() -> None:
+    probabilities = align_probabilities(
+        probabilities=[[0.7, 0.1, 0.2]],
+        model_classes=[2, 0, 1],
+        target_classes=(0, 1, 2),
+    )
+    np.testing.assert_allclose(probabilities, [[0.1, 0.2, 0.7]])
+    with pytest.raises(ValueError, match="sum to one"):
+        align_probabilities(
+            probabilities=[[0.5, 0.5, 0.5]],
+            model_classes=[0, 1, 2],
+            target_classes=(0, 1, 2),
+        )
+    metrics = evaluate_multiclass_model(
+        y_true=[0, 1, 2],
+        y_prob=np.eye(3),
+        classes=(0, 1, 2),
+    )
+    assert metrics.accuracy == metrics.f1 == metrics.roc_auc == metrics.pr_auc == 1
+    assert metrics.brier_score == metrics.calibration_error == 0
+    metrics = evaluate_multiclass_model(
+        y_true=[0, 1, 2],
+        y_prob=[[0.8, 0.1, 0.1], [0.2, 0.5, 0.3], [0.1, 0.2, 0.7]],
+        classes=(0, 1, 2),
+        calibration_bins=2,
+    )
+    assert metrics.brier_score == pytest.approx(0.58 / 6)
+    assert metrics.calibration_error == pytest.approx(7 / 45)

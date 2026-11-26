@@ -18,9 +18,6 @@ calibration:
   n_splits: 3
   n_bins: 10
 
-threshold:
-  strategy: max_f1
-
 promotion:
   min_delta: 0.005
   metric_weights:

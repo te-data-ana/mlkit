@@ -1,0 +1,198 @@
+schema: '2.0'
+stages:
+  fetch_and_prepare_uci:
+    cmd: uv run --extra datasets mlkit fetch-and-prepare-uci --dataset-id 697
+      --snapshot-dir data/students/raw/uci --output-path
+      data/students/prepared.parquet --use_case students --map-target target
+      '"Dropout"' 0 --map-target target '"Enrolled"' 1 --map-target target
+      '"Graduate"' 2
+    deps:
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        dataset_id: 697
+        use_case: students
+    outs:
+    - path: data/students/prepared.parquet
+      hash: md5
+      md5: 9a73986c636057f7500140879349bf1f
+      size: 119171
+    - path: data/students/raw/uci
+      hash: md5
+      md5: 44e269c8be7ae15a20cb78bc62d60880.dir
+      size: 141134
+      nfiles: 4
+  create_split:
+    cmd: DATA_DIR=$PWD/data/students uv run mlkit create-split --use_case
+      students --input_parquet prepared.parquet --split_name oos-42
+      --random_state 42 --split_random_state inherit --validation_fraction 0.1
+      --test_fraction 0.1 --monitoring_fraction 0.1
+    deps:
+    - path: data/students/prepared.parquet
+      hash: md5
+      md5: 9a73986c636057f7500140879349bf1f
+      size: 119171
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        random_state: 42
+        seeds.split: inherit
+        split:
+          name: oos-42
+          validation_fraction: 0.1
+          test_fraction: 0.1
+          monitoring_fraction: 0.1
+        use_case: students
+    outs:
+    - path: data/students/splits
+      hash: md5
+      md5: 193698ad61ea893a9e4c16b931d208e0.dir
+      size: 207447
+      nfiles: 5
+  train_model:
+    cmd: DATA_DIR=$PWD/data/students uv run mlkit train --use_case students
+      --config lr.yaml --random_state 42 --training_random_state inherit
+      --classifier_random_state inherit --split_name oos-42 --calibration_method
+      isotonic --n_jobs 1 --tune-model true --register-model true
+      --promote-model false
+    deps:
+    - path: data/students/splits
+      hash: md5
+      md5: 193698ad61ea893a9e4c16b931d208e0.dir
+      size: 207447
+      nfiles: 5
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/config/lr.yaml
+      hash: md5
+      md5: 8fd6042056de78cc015afe6f52eb480b
+      size: 446
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        calibration.method: isotonic
+        model:
+          classifier: lr
+          register_model: true
+          promote_model: false
+        random_state: 42
+        seeds.classifier: inherit
+        seeds.training: inherit
+        split.name: oos-42
+        training.n_jobs: 1
+        training.tune_model: true
+        use_case: students
+    outs:
+    - path: data/students/manifests
+      hash: md5
+      md5: 8dba2e10f256465931c2cb7b29a602c0.dir
+      size: 10825
+      nfiles: 1
+  batch_predict:
+    cmd: DATA_DIR=$PWD/data/students uv run mlkit batch-predict --use_case
+      students --input_dataset splits/oos-42_test.parquet --output_dataset
+      predictions/students_lr_oos-42 --model_manifest
+      manifests/students-lr-oos-42.json
+    deps:
+    - path: data/students/manifests/students-lr-oos-42.json
+      hash: md5
+      md5: 74448dff83436f3e9bf8e114156efc7a
+      size: 10825
+    - path: data/students/splits/oos-42_test.parquet
+      hash: md5
+      md5: 51dce996ffb8090fa004066d75ae7715
+      size: 37698
+    - path: pyproject.toml
+      hash: md5
+      md5: c93b027eaec0f6270366e4da97d9022c
+      size: 2171
+    - path: src/mlkit
+      hash: md5
+      md5: 87152ba4da701c17040bbb971a83a56c.dir
+      size: 307309
+      nfiles: 51
+    - path: use_cases/pyproject.toml
+      hash: md5
+      md5: e367cc5431e61d6fb91a0310a0476bee
+      size: 667
+    - path: use_cases/src/use_cases/students
+      hash: md5
+      md5: 181a449e7613fb8a538e281d727ca34a.dir
+      size: 6492
+      nfiles: 3
+    - path: uv.lock
+      hash: md5
+      md5: 16504fe536651cb298d4fda27cd5bf82
+      size: 403234
+    params:
+      pipeline/students.yaml:
+        model.classifier: lr
+        split.name: oos-42
+        use_case: students
+    outs:
+    - path: data/students/predictions
+      hash: md5
+      md5: e0e9e9018c1df43377b11a9c960a2f16.dir
+      size: 52533
+      nfiles: 1
