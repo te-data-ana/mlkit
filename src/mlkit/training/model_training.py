@@ -13,11 +13,11 @@ from threadpoolctl import threadpool_limits
 from mlkit.config.schemas import TrainingConfig
 from mlkit.evaluation import (
     Timer,
-    align_probabilities,
     evaluate_model,
     evaluate_multiclass_model,
     reliability_diagram,
     select_f1_threshold,
+    validate_and_align_probabilities,
 )
 from mlkit.models import (
     MODEL_CATALOG,
@@ -200,7 +200,7 @@ def train_model(
         with Timer() as pred_timer:
             probabilities = trained_model.predict_proba(X_test)
             y_proba = (
-                align_probabilities(
+                validate_and_align_probabilities(
                     probabilities=probabilities,
                     model_classes=trained_model.classes_,
                     target_classes=use_case.target_classes,

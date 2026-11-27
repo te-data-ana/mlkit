@@ -12,7 +12,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from threadpoolctl import threadpool_limits
 
 from mlkit.config.schemas import TrainingConfig
-from mlkit.evaluation import align_probabilities
+from mlkit.evaluation import validate_and_align_probabilities
 from mlkit.models import MODEL_CATALOG, build_classifier_pipeline, create_model
 from mlkit.training.calibration import make_cv_splits
 from mlkit.training.features import select_feature_columns
@@ -172,7 +172,7 @@ def optimize_hyperparameters(
             if hasattr(pipeline, "predict_proba"):
                 probabilities = pipeline.predict_proba(fold_validation_features)
                 ranking_scores = (
-                    align_probabilities(
+                    validate_and_align_probabilities(
                         probabilities=probabilities,
                         model_classes=pipeline.classes_,
                         target_classes=use_case.target_classes,

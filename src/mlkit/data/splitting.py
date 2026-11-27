@@ -53,18 +53,22 @@ class SplitMetadata(BaseModel):
     @model_validator(mode="after")
     def validate_metadata(self) -> Self:
         """Check consistency of the requested and realized split."""
-        requested = [getattr(self, f"{name}_fraction") for name in COHORTS]
-        counts = [getattr(self, f"{name}_rows") for name in COHORTS]
+        requested_fractions = [getattr(self, f"{name}_fraction") for name in COHORTS]
+        requested_counts = [getattr(self, f"{name}_rows") for name in COHORTS]
         if (
-            any(value <= 0 for value in requested[:3])
-            or abs(sum(requested) - 1) > 1e-9
-            or any(value <= 0 for value in counts[:3])
-            or (requested[3] == 0) != (counts[3] == 0)
+            any(frac < 0 for frac in requested_fractions)
+            or abs(sum(requested_fractions) - 1) > 1e-9
+            or any(count < 0 for count in requested_counts)
+            or any((requested_fractions[i] == 0) for i in [0, 2])
+            or any(
+                (requested_fractions[i] == 0) != (requested_counts[i] == 0)
+                for i in [1, 3]
+            )
         ):
             raise ValueError("Invalid requested fractions or cohort counts.")
-        total = sum(counts)
+        total = sum(requested_counts)
         previous_end: pd.Timestamp | None = None
-        for name, count in zip(COHORTS, counts):
+        for name, count in zip(COHORTS, requested_counts):
             if abs(getattr(self, f"{name}_actual_fraction") - count / total) > 1e-9:
                 raise ValueError(f"Actual fraction does not match {name} row count.")
             start, end = getattr(self, f"{name}_start"), getattr(self, f"{name}_end")
@@ -246,8 +250,9 @@ def _temporal_parts(
         parts[name] = data.iloc[start_row:end_row].copy()
         start_group, start_row = boundary + 1, end_row
     parts[active[-1]] = data.iloc[start_row:].copy()
-    if fractions["monitoring"] == 0:
-        parts["monitoring"] = data.iloc[:0].copy()
+    for name in ("validation", "monitoring"):
+        if fractions[name] == 0:
+            parts[name] = data.iloc[:0].copy()
     return parts
 
 
@@ -399,8 +404,8 @@ def create_split(
     else:
         raise ValueError(f"Unsupported split strategy: {use_case.split_strategy}")
     return create_data_splits(
-        use_case,
-        df,
+        use_case=use_case,
+        df=df,
         split_name=split_name,
         validation_fraction=validation_fraction,
         test_fraction=test_fraction,

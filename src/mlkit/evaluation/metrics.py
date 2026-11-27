@@ -17,7 +17,7 @@ from sklearn.metrics import (
 )
 
 
-def align_probabilities(
+def validate_and_align_probabilities(
     probabilities: ArrayLike,
     model_classes: ArrayLike,
     target_classes: tuple[int, ...],
@@ -31,6 +31,9 @@ def align_probabilities(
 
     Returns:
         Aligned probability array.
+
+    Raises:
+        ValueError: If class labels, array shape, or probabilities are invalid.
     """
     array = np.asarray(probabilities, dtype=float)
     classes = np.asarray(model_classes)
@@ -183,7 +186,7 @@ def evaluate_multiclass_model(
     """
     if calibration_bins < 1:
         raise ValueError("calibration_bins must be a positive integer.")
-    probabilities = align_probabilities(
+    probabilities = validate_and_align_probabilities(
         probabilities=y_prob,
         model_classes=classes,
         target_classes=classes,

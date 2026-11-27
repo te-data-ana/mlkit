@@ -8,7 +8,7 @@ import pandas as pd
 from numpy.typing import ArrayLike
 from pydantic import BaseModel
 
-from mlkit.evaluation import align_probabilities
+from mlkit.evaluation import validate_and_align_probabilities
 from mlkit.serving.model_loader import LoadedModel, ModelMetadata
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,7 @@ class Predictor:
             probabilities = self._to_probability_array(self.model.predict_proba(df))
 
             if len(self.use_case.target_classes) > 2:
-                probabilities = align_probabilities(
+                probabilities = validate_and_align_probabilities(
                     probabilities=probabilities,
                     model_classes=self.model.classes_,
                     target_classes=self.use_case.target_classes,
@@ -161,7 +161,7 @@ class Predictor:
             probabilities = self._to_probability_array(self.model.predict_proba(df))
             result = df.copy()
             if len(self.use_case.target_classes) > 2:
-                probabilities = align_probabilities(
+                probabilities = validate_and_align_probabilities(
                     probabilities=probabilities,
                     model_classes=self.model.classes_,
                     target_classes=self.use_case.target_classes,

@@ -176,8 +176,8 @@ def test_temporal_zero_monitoring_preserves_nanosecond_boundaries(
 @pytest.mark.parametrize(
     "values",
     [
-        {"validation_fraction": 0},
-        {"test_fraction": -1},
+        {"validation_fraction": -0.1},
+        {"test_fraction": 0},
         {"monitoring_fraction": -0.1},
         {"test_fraction": True},
         {"test_fraction": float("nan")},

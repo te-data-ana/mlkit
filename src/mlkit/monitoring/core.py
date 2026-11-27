@@ -16,7 +16,7 @@ from sklearn.metrics import precision_score, recall_score, roc_auc_score
 
 from mlkit.config import RuntimeSettings
 from mlkit.data import normalize_strings, read_jsonl_log, validate_data
-from mlkit.evaluation import align_probabilities
+from mlkit.evaluation import validate_and_align_probabilities
 from mlkit.use_cases import UseCase
 
 logger = logging.getLogger(__name__)
@@ -212,7 +212,7 @@ def _prepare_validated_df(
         if multiclass:
             for column in probability_columns:
                 df[column] = pd.to_numeric(df[column], errors="raise")
-            probabilities = align_probabilities(
+            probabilities = validate_and_align_probabilities(
                 probabilities=df[probability_columns].to_numpy(),
                 model_classes=use_case.target_classes,
                 target_classes=use_case.target_classes,

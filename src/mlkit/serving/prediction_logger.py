@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from mlkit.evaluation import align_probabilities
+from mlkit.evaluation import validate_and_align_probabilities
 from mlkit.serving.predictor import PredictionResult, Predictor
 from mlkit.serving.schemas import (
     MulticlassPredictionEvent,
@@ -69,7 +69,7 @@ class PredictionLogger:
                 raise ValueError(
                     "Prediction probabilities do not cover the declared target classes."
                 )
-            aligned = align_probabilities(
+            aligned = validate_and_align_probabilities(
                 probabilities=[[probabilities[str(value)] for value in classes]],
                 model_classes=classes,
                 target_classes=classes,
