@@ -11,11 +11,14 @@ from mlkit.data.manipulation import (
     preprocess_raw_data,
 )
 from mlkit.models.features import IdentityFeatureBuilder
-from mlkit.use_cases import UseCase, get_use_case
+from mlkit.use_cases import UseCase
+
+pytestmark = pytest.mark.usefixtures("synthetic_use_case_registry")
 
 
 @pytest.mark.unit
 def test_main_passes_cli_config_to_preprocess_raw_data(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
 
@@ -39,7 +42,7 @@ def test_main_passes_cli_config_to_preprocess_raw_data(
             "--end_date",
             "2026-06-01",
             "--use_case",
-            "churn",
+            "binary_uc",
             "--random_state",
             "19",
             "--preparation_random_state",
@@ -54,7 +57,7 @@ def test_main_passes_cli_config_to_preprocess_raw_data(
         output_csv="out.csv",
         start_date="2026-01-01",
         end_date="2026-06-01",
-        use_case=get_use_case("churn"),
+        use_case=binary_use_case,
         random_state=7,
     )
 
@@ -95,6 +98,7 @@ def test_assign_split_values_is_reproducible() -> None:
 
 @pytest.mark.unit
 def test_preprocess_raw_data_creates_output_file(
+    binary_use_case: UseCase,
     generated_training_csv: Path,
     tmp_path: Path,
 ) -> None:
@@ -104,7 +108,7 @@ def test_preprocess_raw_data_creates_output_file(
         start_date="2024-01-01",
         end_date="2024-12-01",
         data_dir=tmp_path,
-        use_case=get_use_case("churn"),
+        use_case=binary_use_case,
     )
 
     assert output_path.exists()

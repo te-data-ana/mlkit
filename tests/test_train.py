@@ -14,9 +14,10 @@ from mlkit import train
 from mlkit.config.schemas import TrainingConfig, TuningConfig
 from mlkit.data.splitting import create_data_splits, load_split_metadata
 from mlkit.training import TuningResult
-from mlkit.use_cases import get_use_case
+from mlkit.use_cases import UseCase
 
-CHURN_USE_CASE = get_use_case("churn")
+pytestmark = pytest.mark.usefixtures("synthetic_use_case_registry")
+
 TEMPORAL_METADATA = {
     "strategy": "temporal",
     "fit_rows": 70,
@@ -75,7 +76,7 @@ def test_training_cli_passes_run_time_options(
         [
             "train",
             "--use_case",
-            "churn",
+            "binary_uc",
             "--config",
             "lr.yaml",
             "--calibration_method",
@@ -121,7 +122,7 @@ def test_run_training_job_rejects_invalid_run_time_options(
 
     with pytest.raises(error, match=message):
         train.run_training_job(
-            use_case="churn",
+            use_case="binary_uc",
             config_file="config.yaml",
             split_name="test",
             **options,
@@ -164,6 +165,7 @@ def test_run_training_job_resolves_required_use_case_before_training(
 
 @pytest.mark.unit
 def test_run_training_job_derives_experiment_from_use_case_and_split(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
@@ -189,7 +191,7 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
             },
         ),
     )
-    use_case = CHURN_USE_CASE.name
+    use_case = binary_use_case.name
     config_file = "train.yaml"
     split_name = "temporal"
     fit_df, validation_df = MagicMock(), MagicMock()
@@ -245,7 +247,7 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
     load_splits.assert_called_once_with(
         split_name=split_name,
         split_dir=tmp_path / "splits",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         metadata=load_split_metadata(tmp_path / "splits/temporal.json"),
     )
     train_model_mock.assert_called_once_with(
@@ -253,7 +255,7 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
         fit_df=fit_df,
         validation_df=validation_df,
         test_df=load_splits.return_value[2],
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         calibration_method="none",
         n_jobs=1,
         model_params_override=None,
@@ -276,11 +278,12 @@ def test_run_training_job_derives_experiment_from_use_case_and_split(
 
 @pytest.mark.unit
 def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     config_factory: Callable[..., TrainingConfig],
 ) -> None:
-    use_case = CHURN_USE_CASE.name
+    use_case = binary_use_case.name
     write_temporal_metadata(tmp_path / "splits")
     settings = SimpleNamespace(
         config_dir=tmp_path,
@@ -391,10 +394,11 @@ def test_run_training_job_uses_run_time_options_and_writes_unregistered_manifest
 
 @pytest.mark.unit
 def test_run_training_job_logs_tuning_result_and_fits_final_model(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    use_case = CHURN_USE_CASE.name
+    use_case = binary_use_case.name
     write_temporal_metadata(tmp_path / "splits")
     config = SimpleNamespace(
         random_state=19,
@@ -427,11 +431,11 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
     train_df = pd.DataFrame(
         {
             "reference_date": pd.date_range("2026-01-01", periods=10),
-            "churn": [0, 1] * 5,
+            "label": [0, 1] * 5,
             "feature": range(10),
         }
     )
-    test_df = pd.DataFrame({"churn": [0, 1], "feature": [10, 11]})
+    test_df = pd.DataFrame({"label": [0, 1], "feature": [10, 11]})
     fit_df, validation_df = train_df.iloc[:8], train_df.iloc[8:]
     load_splits = MagicMock(return_value=(fit_df, validation_df, test_df))
     optimizer = MagicMock(
@@ -491,7 +495,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
     load_splits.assert_called_once_with(
         split_name=split_name,
         split_dir=tmp_path / "splits",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         metadata=load_split_metadata(tmp_path / "splits/temporal.json"),
     )
     assert optimizer.call_count == 1
@@ -500,7 +504,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
     validation_df = train_model.call_args.kwargs["validation_df"]
     assert set(fit_df.index).isdisjoint(validation_df.index)
     assert len(fit_df) + len(validation_df) == len(train_df)
-    assert optimizer.call_args.kwargs["use_case"] is CHURN_USE_CASE
+    assert optimizer.call_args.kwargs["use_case"] is binary_use_case
     assert optimizer.call_args.kwargs["n_jobs"] == 1
     assert log_experiment_result.call_args.kwargs["tune_model"] is True
     train_model.assert_called_once_with(
@@ -508,7 +512,7 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
         fit_df=fit_df,
         validation_df=validation_df,
         test_df=test_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_params_override={"n_estimators": 150, "max_depth": None},
         calibration_method="none",
         n_jobs=1,
@@ -527,6 +531,8 @@ def test_run_training_job_logs_tuning_result_and_fits_final_model(
 
 @pytest.mark.unit
 def test_tuning_excludes_threshold_validation(
+    binary_use_case: UseCase,
+    random_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     tmp_path: Path,
@@ -536,15 +542,12 @@ def test_tuning_excludes_threshold_validation(
         random_state=17,
         tuning=TuningConfig(n_trials=2, n_splits=2),
     )
-    train_df = pd.DataFrame({"churn": [0, 1] * 25})
+    train_df = pd.DataFrame({"label": [0, 1] * 25})
     fit_df, validation_df = train_df.iloc[:40], train_df.iloc[40:]
-    test_df = pd.DataFrame({"churn": [0, 1]}, index=[50, 51])
-    random_use_case = replace(
-        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
-    )
+    test_df = pd.DataFrame({"label": [0, 1]}, index=[50, 51])
     create_data_splits(
         use_case=random_use_case,
-        df=pd.DataFrame({"churn": [0, 1] * 50}),
+        df=pd.DataFrame({"label": [0, 1] * 50}),
         split_name="s",
         random_state=7,
         settings=SimpleNamespace(data_dir=tmp_path),
@@ -599,7 +602,7 @@ def test_tuning_excludes_threshold_validation(
         monkeypatch.setattr(train.mlflow, name, MagicMock())
 
     train.run_training_job(
-        use_case="churn",
+        use_case="binary_uc",
         config_file="c.yaml",
         split_name="s",
         tune_model=True,
@@ -632,7 +635,7 @@ def test_training_requires_split_metadata_before_experiment_setup(
     monkeypatch.setattr(train, "setup_local_experiment", setup)
     with pytest.raises(FileNotFoundError, match="missing.json"):
         train.run_training_job(
-            use_case="churn",
+            use_case="binary_uc",
             config_file="c.yaml",
             split_name="missing",
             config_dir=tmp_path,
@@ -643,15 +646,16 @@ def test_training_requires_split_metadata_before_experiment_setup(
 
 @pytest.mark.unit
 def test_training_rejects_split_strategy_mismatch(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     tmp_path: Path,
 ) -> None:
     create_data_splits(
         use_case=replace(
-            CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+            binary_use_case, time_column=None, split_strategy="stratified_random"
         ),
-        df=pd.DataFrame({"churn": [0, 1] * 50}),
+        df=pd.DataFrame({"label": [0, 1] * 50}),
         split_name="s",
         settings=SimpleNamespace(data_dir=tmp_path),
     )
@@ -659,7 +663,7 @@ def test_training_rejects_split_strategy_mismatch(
     monkeypatch.setattr(train, "load_config", lambda **_: (config, tmp_path / "c.yaml"))
     with pytest.raises(ValueError, match="requires 'temporal'"):
         train.run_training_job(
-            use_case="churn",
+            use_case="binary_uc",
             config_file="c.yaml",
             split_name="s",
             config_dir=tmp_path,
@@ -670,11 +674,12 @@ def test_training_rejects_split_strategy_mismatch(
 @pytest.mark.unit
 @pytest.mark.parametrize("promote_model", [False, True])
 def test_registration_uses_derived_name_and_only_promotion_aliases(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     promote_model: bool,
 ) -> None:
-    use_case = CHURN_USE_CASE.name
+    use_case = binary_use_case.name
     write_temporal_metadata(tmp_path / "splits")
     config = SimpleNamespace(
         model=SimpleNamespace(classifier="rf"),

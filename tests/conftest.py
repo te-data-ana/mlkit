@@ -1,6 +1,7 @@
 """Fixtures shared by configuration, model, and training tests."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -28,13 +29,89 @@ from mlkit.tracking.manifest import (
     ManifestTraining,
     TrainingManifest,
 )
-from mlkit.use_cases import get_use_case
-
-CHURN_USE_CASE = get_use_case("churn")
+from mlkit.use_cases import UseCase, registry
+from tests.sample_cases import SampleFeatureBuilder, SampleFeatures
 
 
 @pytest.fixture
-def training_manifest_factory() -> Callable[..., TrainingManifest]:
+def binary_use_case() -> UseCase:
+    return UseCase(
+        name="binary_uc",
+        target_column="label",
+        time_column="reference_date",
+        feature_schema=SampleFeatures,
+        feature_builder_factory=SampleFeatureBuilder,
+        index_column="customer_id",
+        metadata_fields={"customer_id": int},
+    )
+
+
+@pytest.fixture
+def random_use_case(binary_use_case: UseCase) -> UseCase:
+    return replace(
+        binary_use_case,
+        name="random_uc",
+        target_column="label",
+        time_column=None,
+        split_strategy="stratified_random",
+        index_column=None,
+        metadata_fields={},
+    )
+
+
+@pytest.fixture
+def multiclass_use_case(random_use_case: UseCase) -> UseCase:
+    return replace(random_use_case, name="multi_uc", target_classes=(0, 1, 2))
+
+
+@pytest.fixture
+def multiclass_data_factory(
+    generated_training_df: pd.DataFrame,
+) -> Callable[[int], pd.DataFrame]:
+    def make_frame(rows: int) -> pd.DataFrame:
+        frame = (
+            pd.concat(
+                [generated_training_df]
+                * (
+                    (rows + len(generated_training_df) - 1)
+                    // len(generated_training_df)
+                ),
+                ignore_index=True,
+            )
+            .iloc[:rows]
+            .copy()
+        )
+        frame.columns = [column.lower().replace(" ", "_") for column in frame.columns]
+        frame = frame.drop(columns="label")
+        frame["label"] = np.arange(rows) % 3
+        return frame
+
+    return make_frame
+
+
+@pytest.fixture
+def synthetic_use_case_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    binary_use_case: UseCase,
+    random_use_case: UseCase,
+    multiclass_use_case: UseCase,
+) -> None:
+    def entry_points(*, group: str) -> list[SimpleNamespace]:
+        assert group == registry.ENTRY_POINT_GROUP
+        return [
+            SimpleNamespace(load=lambda case=case: case)
+            for case in (binary_use_case, random_use_case, multiclass_use_case)
+        ]
+
+    monkeypatch.setattr(registry, "USE_CASES", {})
+    monkeypatch.setattr(registry, "_DISCOVERED", False)
+    monkeypatch.setattr(registry, "entry_points", entry_points)
+
+
+@pytest.fixture
+def training_manifest_factory(
+    binary_use_case: UseCase,
+) -> Callable[..., TrainingManifest]:
     def _create(promotion_decision: dict | None = None) -> TrainingManifest:
 
         evaluation = metrics.evaluate_model(
@@ -51,7 +128,7 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 run_name="rf__oot_26q1",
             ),
             model=ManifestModel(
-                use_case=CHURN_USE_CASE.name,
+                use_case=binary_use_case.name,
                 model_name="churn-risk",
                 model_version=4,
                 model_reference=LoggedModelReference(
@@ -62,7 +139,7 @@ def training_manifest_factory() -> Callable[..., TrainingManifest]:
                 ),
             ),
             data=ManifestData(
-                target_column="churn",
+                target_column="label",
                 time_column="reference_date",
                 split_name="oot_26q1",
                 split_metadata={
@@ -174,7 +251,7 @@ def sample_training_df() -> pd.DataFrame:
                 "Premium",
                 "Basic",
             ],
-            "churn": [1, 0, 0, 1, 0, 1, 0, 0, 1, 1],
+            "label": [1, 0, 0, 1, 0, 1, 0, 0, 1, 1],
         }
     )
     df["contract_length"] = df["contract_length"].astype("str")
@@ -190,19 +267,21 @@ def temporal_sample_training_df(sample_training_df: pd.DataFrame) -> pd.DataFram
 
 
 @pytest.fixture
-def sample_features_df() -> pd.DataFrame:
-    # Feature and preprocessing tests use this frame without the churn target.
-    df = pd.DataFrame(
-        {
-            "tenure": [0, 12, 24, 60, None],
-            "contract_length": ["Monthly", "Quarterly", "Annual", "Monthly", None],
-            "usage_frequency": [10, 20, 30, None, 5],
-            "last_interaction": [5, 15, 20, 10, None],
-            "total_spend": [0, 400, 1000, None, 750],
-            "support_calls": [10, 6, 1, 2, None],
-            "payment_delay": [25, 10, 0, None, 30],
-        }
-    )
+def sample_features_df(sample_training_df: pd.DataFrame) -> pd.DataFrame:
+    """Return a feature subset with missing values for preprocessing tests."""
+    df = sample_training_df.iloc[:5][
+        [
+            "tenure",
+            "contract_length",
+            "usage_frequency",
+            "last_interaction",
+            "total_spend",
+            "support_calls",
+            "payment_delay",
+        ]
+    ].copy()
+    df.loc[df.index[-1], "contract_length"] = None
+    df.loc[df.index[-1], "usage_frequency"] = 5
     df["contract_length"] = df["contract_length"].astype("str")
     return df
 
@@ -210,9 +289,10 @@ def sample_features_df() -> pd.DataFrame:
 @pytest.fixture
 def sample_training_data(
     sample_features_df: pd.DataFrame,
+    sample_training_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.Series]:
     X = sample_features_df.copy()
-    y = pd.Series([1, 0, 0, 1, 0], name="churn")
+    y = sample_training_df.loc[X.index, "label"].copy()
 
     return X, y
 
@@ -284,7 +364,7 @@ def generated_training_df() -> pd.DataFrame:
                 "Quarterly",
                 "Monthly",
             ],
-            "Churn": [1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
+            "label": [1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1],
         },
         index=pd.Index(range(1001, 1013), name="customer_id"),
     )
@@ -304,7 +384,7 @@ def generated_inference_csv(
 ) -> Path:
     """Write generated inference data to a temporary CSV file."""
     path = tmp_path / "inference.csv"
-    generated_training_df.drop(columns=["Churn"]).rename_axis("CustomerID").to_csv(path)
+    generated_training_df.drop(columns=["label"]).rename_axis("CustomerID").to_csv(path)
     return path
 
 
@@ -362,12 +442,14 @@ def registered_model(
     generated_training_df: pd.DataFrame,
     mlflow_test_setup: dict[str, Any],
     sample_config_yaml: Path,
+    binary_use_case: UseCase,
+    synthetic_use_case_registry: None,
 ) -> dict[str, object]:
     """Train and register a model in an isolated temporary MLflow store."""
     from mlkit import train
     from mlkit.data import splitting, storage
 
-    use_case = CHURN_USE_CASE.name
+    use_case = binary_use_case.name
     tmp_path = mlflow_test_setup["tmp_path"]
     tracking_uri = mlflow_test_setup["tracking_uri"]
     artifact_dir = tmp_path / "artifacts"
@@ -395,7 +477,7 @@ def registered_model(
     )
 
     _ = splitting.create_data_splits(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         df=df,
         split_name=split_name,
     )

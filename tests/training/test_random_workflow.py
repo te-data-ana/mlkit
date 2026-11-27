@@ -7,19 +7,21 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.base import BaseEstimator
-from use_cases.churn import CHURN_USE_CASE
 
 from mlkit.config.schemas import TrainingConfig, TrainingSeedOverrides, TuningConfig
 from mlkit.training import model_training, tuning
 from mlkit.training.calibration import make_cv_splits, make_stratified_random_cv_splits
 from mlkit.training.model_training import train_model
 from mlkit.training.tuning import optimize_hyperparameters
+from mlkit.use_cases import UseCase
 
 
-def test_random_cv_is_seeded_stratified_without_timestamps() -> None:
+def test_random_cv_is_seeded_stratified_without_timestamps(
+    binary_use_case: UseCase,
+) -> None:
     data = pd.DataFrame({"label": [0, 1] * 30})
     use_case = replace(
-        CHURN_USE_CASE,
+        binary_use_case,
         target_column="label",
         time_column=None,
         split_strategy="stratified_random",
@@ -48,6 +50,7 @@ def test_random_cv_rejects_invalid_labels(labels: list[int | None]) -> None:
 
 
 def test_training_threshold_holdout_and_random_calibration(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
     monkeypatch: pytest.MonkeyPatch,
@@ -60,7 +63,7 @@ def test_training_threshold_holdout_and_random_calibration(
         seed_overrides=TrainingSeedOverrides(training=23, classifier=31),
     )
     use_case = replace(
-        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+        binary_use_case, time_column=None, split_strategy="stratified_random"
     )
     fit_df, validation_df = train.iloc[:48], train.iloc[48:]
     assert set(fit_df.index).isdisjoint(validation_df.index)
@@ -88,6 +91,7 @@ def test_training_threshold_holdout_and_random_calibration(
 
 
 def test_random_tuning_without_time_column(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
     monkeypatch: pytest.MonkeyPatch,
@@ -107,7 +111,7 @@ def test_random_tuning_without_time_column(
     monkeypatch.setattr(tuning, "make_cv_splits", cv_splits)
     monkeypatch.setattr(tuning, "create_model", create_model)
     use_case = replace(
-        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+        binary_use_case, time_column=None, split_strategy="stratified_random"
     )
     result = optimize_hyperparameters(use_case, config, data)
     assert result.n_trials == 2

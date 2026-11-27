@@ -10,25 +10,25 @@ stages:
     deps:
     - path: data/diabetes/manifests/diabetes-lr-oos-42.json
       hash: md5
-      md5: 84c4bb6cf6eccec50908bd1b681b4442
-      size: 3974
+      md5: 94c4847af10e752106f19fb5f9b5df2d
+      size: 4105
     - path: data/diabetes/splits/oos-42_monitoring.parquet
       hash: md5
       md5: 16e9bfe76d7c924a952cbe953eea0a60
       size: 323821
     - path: pyproject.toml
       hash: md5
-      md5: c93b027eaec0f6270366e4da97d9022c
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit
       hash: md5
-      md5: 5a4361d6835da5d18114c4681a462be7.dir
-      size: 284153
+      md5: 339618aa1238ed65a48ed93e97a9a935.dir
+      size: 309592
       nfiles: 51
     - path: use_cases/pyproject.toml
       hash: md5
-      md5: 5b978f1eba94a400c7e72c6d40689092
-      size: 567
+      md5: 76b132eaba7e6a5926149fbcfff00256
+      size: 667
     - path: use_cases/src/use_cases/diabetes
       hash: md5
       md5: c561f866783e9af6d341b4fa5e823290.dir
@@ -36,8 +36,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: 16504fe536651cb298d4fda27cd5bf82
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/diabetes.yaml:
         model.classifier: lr
@@ -49,8 +49,8 @@ stages:
     outs:
     - path: data/diabetes/api_logs
       hash: md5
-      md5: 08d8f7515d6c46823fc137bbb56b8908.dir
-      size: 642591
+      md5: ea4839af694f4a4b0ba9d7543bfbc930.dir
+      size: 1284193
       nfiles: 1
   ingest_error_logs:
     cmd: DATA_DIR=$PWD/data/diabetes LOGGING_DIR=$PWD/data/diabetes/api_logs uv
@@ -58,22 +58,22 @@ stages:
     deps:
     - path: data/diabetes/api_logs
       hash: md5
-      md5: 08d8f7515d6c46823fc137bbb56b8908.dir
-      size: 642591
+      md5: ea4839af694f4a4b0ba9d7543bfbc930.dir
+      size: 1284193
       nfiles: 1
     - path: pyproject.toml
       hash: md5
-      md5: c93b027eaec0f6270366e4da97d9022c
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit/data
       hash: md5
-      md5: f594825d0a1492c3c85f8a5c596cfb24.dir
-      size: 46031
+      md5: 07000d51e61f1490df54209765917a12.dir
+      size: 46927
       nfiles: 9
     - path: use_cases/pyproject.toml
       hash: md5
-      md5: 5b978f1eba94a400c7e72c6d40689092
-      size: 567
+      md5: 76b132eaba7e6a5926149fbcfff00256
+      size: 667
     - path: use_cases/src/use_cases/diabetes
       hash: md5
       md5: c561f866783e9af6d341b4fa5e823290.dir
@@ -81,8 +81,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: 16504fe536651cb298d4fda27cd5bf82
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/diabetes.yaml:
         monitoring.error_dataset: api_errors
@@ -100,22 +100,22 @@ stages:
     deps:
     - path: data/diabetes/api_logs
       hash: md5
-      md5: 08d8f7515d6c46823fc137bbb56b8908.dir
-      size: 642591
+      md5: ea4839af694f4a4b0ba9d7543bfbc930.dir
+      size: 1284193
       nfiles: 1
     - path: pyproject.toml
       hash: md5
-      md5: c93b027eaec0f6270366e4da97d9022c
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit
       hash: md5
-      md5: 5a4361d6835da5d18114c4681a462be7.dir
-      size: 284153
+      md5: 339618aa1238ed65a48ed93e97a9a935.dir
+      size: 309592
       nfiles: 51
     - path: use_cases/pyproject.toml
       hash: md5
-      md5: 5b978f1eba94a400c7e72c6d40689092
-      size: 567
+      md5: 76b132eaba7e6a5926149fbcfff00256
+      size: 667
     - path: use_cases/src/use_cases/diabetes
       hash: md5
       md5: c561f866783e9af6d341b4fa5e823290.dir
@@ -123,8 +123,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: 16504fe536651cb298d4fda27cd5bf82
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/diabetes.yaml:
         monitoring.analysis_dataset: api_predictions
@@ -132,8 +132,8 @@ stages:
     outs:
     - path: data/diabetes/api_predictions
       hash: md5
-      md5: ee549cfac3c12bdb3151a7508ac36a33.dir
-      size: 68820
+      md5: 30dffb38db9b0763b3526fb4c276e917.dir
+      size: 113307
       nfiles: 1
   monitor:
     cmd: DATA_DIR=$PWD/data/diabetes uv run mlkit monitor --use_case diabetes
@@ -150,31 +150,31 @@ stages:
       nfiles: 0
     - path: data/diabetes/api_predictions
       hash: md5
-      md5: ee549cfac3c12bdb3151a7508ac36a33.dir
-      size: 68820
+      md5: 30dffb38db9b0763b3526fb4c276e917.dir
+      size: 113307
       nfiles: 1
     - path: data/diabetes/manifests/diabetes-lr-oos-42.json
       hash: md5
-      md5: 84c4bb6cf6eccec50908bd1b681b4442
-      size: 3974
+      md5: 94c4847af10e752106f19fb5f9b5df2d
+      size: 4105
     - path: data/diabetes/predictions/diabetes_lr_oos-42
       hash: md5
-      md5: 64a01b5f79ad204cc6de33c6b18920ef.dir
-      size: 371729
+      md5: dbebddc774a0c856212df19b591bd469.dir
+      size: 371773
       nfiles: 1
     - path: pyproject.toml
       hash: md5
-      md5: c93b027eaec0f6270366e4da97d9022c
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit
       hash: md5
-      md5: 5a4361d6835da5d18114c4681a462be7.dir
-      size: 284153
+      md5: 339618aa1238ed65a48ed93e97a9a935.dir
+      size: 309592
       nfiles: 51
     - path: use_cases/pyproject.toml
       hash: md5
-      md5: 5b978f1eba94a400c7e72c6d40689092
-      size: 567
+      md5: 76b132eaba7e6a5926149fbcfff00256
+      size: 667
     - path: use_cases/src/use_cases/diabetes
       hash: md5
       md5: c561f866783e9af6d341b4fa5e823290.dir
@@ -182,8 +182,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: 16504fe536651cb298d4fda27cd5bf82
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/diabetes.yaml:
         model.classifier: lr
@@ -199,6 +199,6 @@ stages:
     outs:
     - path: data/diabetes/monitoring/diabetes_lr_oos-42
       hash: md5
-      md5: 7873a3003d88aba16ddf507627d0a766.dir
+      md5: 53d057543631c6ade1546d23c9d82dca.dir
       size: 615
       nfiles: 1

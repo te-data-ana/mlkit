@@ -19,7 +19,7 @@ def valid_reference_df() -> pd.DataFrame:
             "gender": ["Female", "Male", "Female"],
             "subscription_type": ["Basic", "Premium", "Standard"],
             "contract_length": ["Monthly", "Annual", "Quarterly"],
-            "churn": [0, 1, 1],
+            "label": [0, 1, 1],
             "reference_date": pd.to_datetime(
                 ["2026-01-01", "2026-01-02", "2026-01-03"]
             ),

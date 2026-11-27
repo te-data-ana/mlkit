@@ -1130,6 +1130,16 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
+The default environment includes the bundled use cases. To run only the core
+tests without installing them:
+
+```bash
+uv run --isolated --no-group use-cases pytest tests
+```
+
+The `use-cases` group remains enabled with `--no-dev`; exclude it explicitly when
+it is not needed.
+
 Install the repository's pre-commit hooks with `uv run pre-commit install`.
 CI installs locked dependencies, runs Ruff lint and format checks, and runs
 the full test suite with at least 90% statement coverage for `src/mlkit`.

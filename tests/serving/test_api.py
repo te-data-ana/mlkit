@@ -13,18 +13,16 @@ from mlkit.data import validate_data
 from mlkit.serving import api, model_loader
 from mlkit.serving.model_loader import LoadedModel, load_model
 from mlkit.serving.prediction_logger import PredictionLogger
-from mlkit.use_cases import UseCase, get_use_case
-
-CHURN_USE_CASE = get_use_case("churn")
+from mlkit.use_cases import UseCase
 
 
 @pytest.fixture
-def temp_prediction_logger(tmp_path: Path):
+def temp_prediction_logger(binary_use_case: UseCase, tmp_path: Path):
     return PredictionLogger(
         prediction_log_path=tmp_path / "predictions.jsonl",
         error_log_path=tmp_path / "prediction_errors.jsonl",
         log_features=True,
-        use_case=get_use_case("churn"),
+        use_case=binary_use_case,
     )
 
 
@@ -157,6 +155,7 @@ def test_predict_handles_log_error_failure(
 
 @pytest.mark.unit
 def test_predictor_loads_once_per_api_lifetime(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     mock_model_factory: Callable[..., LoadedModel],
     sample_dict: dict[str, Any],
@@ -179,7 +178,7 @@ def test_predictor_loads_once_per_api_lifetime(
     monkeypatch.setattr(api, "load_model", load_once)
     monkeypatch.setattr(api, "ServingSettings", settings_factory)
 
-    with TestClient(api.create_app(get_use_case("churn"))) as test_client:
+    with TestClient(api.create_app(binary_use_case)) as test_client:
         first_response = test_client.post("/predict", json=sample_dict)
         second_response = test_client.post("/predict", json=sample_dict)
 
@@ -187,12 +186,13 @@ def test_predictor_loads_once_per_api_lifetime(
     assert second_response.status_code == 200
     assert load_count == 1
     settings_factory.assert_called_once_with()
-    assert loaded_use_cases == [CHURN_USE_CASE]
+    assert loaded_use_cases == [binary_use_case]
     assert loaded_settings == [test_client.app.state.settings]
 
 
 @pytest.mark.unit
 def test_api_loads_model_from_manifest_at_startup(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     mock_model_factory: Callable[..., LoadedModel],
     tmp_path: Path,
@@ -215,12 +215,12 @@ def test_api_loads_model_from_manifest_at_startup(
     )
     monkeypatch.setattr(api, "load_model", load)
 
-    with TestClient(api.create_app(get_use_case("churn"))) as test_client:
+    with TestClient(api.create_app(binary_use_case)) as test_client:
         ready_response = test_client.get("/ready")
 
     assert ready_response.status_code == 200
     load.assert_called_once_with(
-        use_case=CHURN_USE_CASE, manifest=manifest, settings=settings
+        use_case=binary_use_case, manifest=manifest, settings=settings
     )
 
 
@@ -230,6 +230,7 @@ def test_api_loads_model_from_manifest_at_startup(
     [(None, "champion"), (9, None)],
 )
 def test_api_loads_configured_model_selector(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     mock_model_factory: Callable[..., LoadedModel],
     tmp_path: Path,
@@ -253,12 +254,12 @@ def test_api_loads_configured_model_selector(
     monkeypatch.setattr(model_loader, "ModelRegistry", lambda: registry)
     monkeypatch.setattr(model_loader.mlflow, "set_tracking_uri", Mock())
 
-    with TestClient(api.create_app(CHURN_USE_CASE)) as test_client:
+    with TestClient(api.create_app(binary_use_case)) as test_client:
         assert test_client.get("/ready").status_code == 200
 
     registry.load_registered_model.assert_called_once_with(
         model_name="churn-risk",
-        expected_use_case=CHURN_USE_CASE,
+        expected_use_case=binary_use_case,
         model_alias=expected_alias,
         model_version=model_version,
     )
@@ -266,6 +267,7 @@ def test_api_loads_configured_model_selector(
 
 @pytest.mark.unit
 def test_api_reports_not_ready_when_model_loading_fails(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     sample_dict: dict[str, Any],
 ) -> None:
@@ -274,7 +276,7 @@ def test_api_reports_not_ready_when_model_loading_fails(
 
     monkeypatch.setattr(api, "load_model", fail_to_load)
 
-    with TestClient(api.create_app(get_use_case("churn"))) as test_client:
+    with TestClient(api.create_app(binary_use_case)) as test_client:
         health_response = test_client.get("/health")
         ready_response = test_client.get("/ready")
         predict_response = test_client.post("/predict", json=sample_dict)
@@ -306,6 +308,7 @@ def test_predict_endpoint_rejects_invalid_features(client: TestClient) -> None:
     ],
 )
 def test_dataframe_and_api_share_feature_validation(
+    binary_use_case: UseCase,
     client: TestClient,
     sample_dict: dict[str, Any],
     field: str,
@@ -316,18 +319,19 @@ def test_dataframe_and_api_share_feature_validation(
     response = client.post("/predict", json=payload)
     assert response.status_code == (200 if valid else 422)
     if valid:
-        result = validate_data(df=pd.DataFrame([payload]), use_case=CHURN_USE_CASE)
+        result = validate_data(df=pd.DataFrame([payload]), use_case=binary_use_case)
         assert (
             result.iloc[0][field]
-            == CHURN_USE_CASE.feature_schema(**payload).model_dump()[field]
+            == binary_use_case.feature_schema(**payload).model_dump()[field]
         )
     else:
         with pytest.raises(ValidationError):
-            validate_data(pd.DataFrame([payload]), CHURN_USE_CASE)
+            validate_data(pd.DataFrame([payload]), binary_use_case)
 
 
 @pytest.mark.integration
 def test_api_serves_predictions_from_registered_model(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     registered_model: dict[str, object],
     sample_dict: dict[str, Any],
@@ -344,7 +348,7 @@ def test_api_serves_predictions_from_registered_model(
 
     monkeypatch.setattr(api, "load_model", load_registered_model)
 
-    with TestClient(api.create_app(get_use_case("churn"))) as test_client:
+    with TestClient(api.create_app(binary_use_case)) as test_client:
         health_response = test_client.get("/health")
         ready_response = test_client.get("/ready")
         predict_response = test_client.post("/predict", json=sample_dict)

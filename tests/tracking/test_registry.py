@@ -5,10 +5,7 @@ import pytest
 from mlflow.exceptions import MlflowException
 
 from mlkit.tracking.registry import ModelRegistry
-from mlkit.use_cases import get_use_case
-
-CHURN_USE_CASE = get_use_case("churn")
-STUDENTS_USE_CASE = get_use_case("students")
+from mlkit.use_cases import UseCase
 
 
 @pytest.mark.unit
@@ -16,7 +13,7 @@ def test_multiclass_comparison_requires_matching_metric_contract(
     registry: ModelRegistry,
 ) -> None:
     registry.client.get_run.return_value.data.tags = {
-        "use_case_name": "students",
+        "use_case_name": "multi_uc",
         "target_classes": "0,1,2",
     }
     registry.client.get_run.return_value.data.params = {
@@ -24,13 +21,13 @@ def test_multiclass_comparison_requires_matching_metric_contract(
     }
     registry.validate_multiclass_comparison(
         run_id="run",
-        expected_use_case="students",
+        expected_use_case="multi_uc",
         target_classes=(0, 1, 2),
     )
     with pytest.raises(ValueError, match="incompatible multiclass"):
         registry.validate_multiclass_comparison(
             run_id="run",
-            expected_use_case="students",
+            expected_use_case="multi_uc",
             target_classes=(0, 2, 1),
         )
 
@@ -99,6 +96,7 @@ def test_registry_loads_an_exact_model_version(
 
 @pytest.mark.unit
 def test_registry_loads_registered_alias_with_its_threshold(
+    binary_use_case: UseCase,
     registry: ModelRegistry,
 ) -> None:
     model_version = Mock(version="7", run_id="run-7")
@@ -106,7 +104,7 @@ def test_registry_loads_registered_alias_with_its_threshold(
     registry.get_model_version_by_alias = Mock(return_value=model_version)
     registry.load_model_by_version = Mock(return_value=model)
     registry.client.get_run.return_value.data.tags = {
-        "use_case_name": "churn",
+        "use_case_name": "binary_uc",
     }
     registry.client.get_run.return_value.data.params = {
         "class_selection_strategy": "max_f1",
@@ -115,7 +113,7 @@ def test_registry_loads_registered_alias_with_its_threshold(
 
     loaded = registry.load_registered_model(
         model_name="my_model",
-        expected_use_case=CHURN_USE_CASE,
+        expected_use_case=binary_use_case,
         model_alias="champion",
     )
 
@@ -135,6 +133,7 @@ def test_registry_loads_registered_alias_with_its_threshold(
 
 @pytest.mark.unit
 def test_registry_loads_registered_version_with_its_threshold(
+    binary_use_case: UseCase,
     registry: ModelRegistry,
 ) -> None:
     model_version_object = Mock(version="7", run_id="run-7")
@@ -142,7 +141,7 @@ def test_registry_loads_registered_version_with_its_threshold(
     registry.get_model_version = Mock(return_value=model_version_object)
     registry.load_model_by_version = Mock(return_value=model)
     registry.client.get_run.return_value.data.tags = {
-        "use_case_name": "churn",
+        "use_case_name": "binary_uc",
     }
     registry.client.get_run.return_value.data.params = {
         "class_selection_strategy": "max_f1",
@@ -151,7 +150,7 @@ def test_registry_loads_registered_version_with_its_threshold(
 
     loaded = registry.load_registered_model(
         model_name="my_model",
-        expected_use_case=CHURN_USE_CASE,
+        expected_use_case=binary_use_case,
         model_version=7,
     )
 
@@ -167,14 +166,14 @@ def test_registry_loads_registered_version_with_its_threshold(
 @pytest.mark.unit
 @pytest.mark.parametrize("selector", ["alias", "version"])
 def test_registry_loads_multiclass_strategy(
-    registry: ModelRegistry, selector: str
+    multiclass_use_case: UseCase, registry: ModelRegistry, selector: str
 ) -> None:
     version = Mock(version="7", run_id="run-7")
     registry.get_model_version_by_alias = Mock(return_value=version)
     registry.get_model_version = Mock(return_value=version)
     registry.load_model_by_version = Mock(return_value=object())
     registry.client.get_run.return_value.data.tags = {
-        "use_case_name": "students",
+        "use_case_name": "multi_uc",
         "target_classes": "0,1,2",
     }
     registry.client.get_run.return_value.data.params = {
@@ -184,7 +183,7 @@ def test_registry_loads_multiclass_strategy(
         {"model_alias": "champion"} if selector == "alias" else {"model_version": 7}
     )
     loaded = registry.load_registered_model(
-        model_name="students-model", expected_use_case=STUDENTS_USE_CASE, **kwargs
+        model_name="students-model", expected_use_case=multiclass_use_case, **kwargs
     )
     assert loaded.model_threshold is None
 
@@ -202,25 +201,28 @@ def test_registry_loads_multiclass_strategy(
     ],
 )
 def test_registry_rejects_invalid_class_selection_metadata(
-    registry: ModelRegistry, params: dict[str, str]
+    binary_use_case: UseCase, registry: ModelRegistry, params: dict[str, str]
 ) -> None:
     registry.get_model_version = Mock(return_value=Mock(version="7", run_id="run-7"))
     registry.load_model_by_version = Mock()
-    registry.client.get_run.return_value.data.tags = {"use_case_name": "churn"}
+    registry.client.get_run.return_value.data.tags = {"use_case_name": "binary_uc"}
     registry.client.get_run.return_value.data.params = params
     with pytest.raises(ValueError, match="strategy|threshold"):
         registry.load_registered_model(
-            model_name="my_model", expected_use_case=CHURN_USE_CASE, model_version=7
+            model_name="my_model",
+            expected_use_case=binary_use_case,
+            model_version=7,
         )
     registry.load_model_by_version.assert_not_called()
 
 
 @pytest.mark.unit
 def test_registry_rejects_inconsistent_multiclass_metadata(
+    multiclass_use_case: UseCase,
     registry: ModelRegistry,
 ) -> None:
     registry.get_model_version = Mock(return_value=Mock(version="7", run_id="run-7"))
-    registry.client.get_run.return_value.data.tags = {"use_case_name": "students"}
+    registry.client.get_run.return_value.data.tags = {"use_case_name": "multi_uc"}
     registry.client.get_run.return_value.data.params = {
         "class_selection_strategy": "argmax",
         "target_classes": "2,1,0",
@@ -228,24 +230,26 @@ def test_registry_rejects_inconsistent_multiclass_metadata(
     with pytest.raises(ValueError, match="multiclass metadata"):
         registry.load_registered_model(
             model_name="students-model",
-            expected_use_case=STUDENTS_USE_CASE,
+            expected_use_case=multiclass_use_case,
             model_version=7,
         )
 
 
 @pytest.mark.unit
 def test_registry_requires_exactly_one_version_selector(
+    binary_use_case: UseCase,
     registry: ModelRegistry,
 ) -> None:
     with pytest.raises(ValueError, match="exactly one"):
         registry.load_registered_model(
             model_name="my_model",
-            expected_use_case=CHURN_USE_CASE,
+            expected_use_case=binary_use_case,
         )
 
 
 @pytest.mark.unit
 def test_registry_rejects_mismatched_use_case_before_loading_model(
+    binary_use_case: UseCase,
     registry: ModelRegistry,
 ) -> None:
     model_version = Mock(version="7", run_id="run-7")
@@ -253,7 +257,7 @@ def test_registry_rejects_mismatched_use_case_before_loading_model(
     load_model = Mock()
     registry.load_model_by_version = load_model
     registry.client.get_run.return_value.data.tags = {
-        "use_case_name": "churn",
+        "use_case_name": "binary_uc",
     }
     registry.client.get_run.return_value.data.params = {
         "class_threshold": "0.35",
@@ -262,7 +266,7 @@ def test_registry_rejects_mismatched_use_case_before_loading_model(
     with pytest.raises(ValueError, match="not selected use case 'alternate'"):
         registry.load_registered_model(
             model_name="my_model",
-            expected_use_case=replace(CHURN_USE_CASE, name="alternate"),
+            expected_use_case=replace(binary_use_case, name="alternate"),
             model_alias="champion",
         )
 
@@ -271,6 +275,7 @@ def test_registry_rejects_mismatched_use_case_before_loading_model(
 
 @pytest.mark.unit
 def test_registry_rejects_runs_without_use_case_identity(
+    binary_use_case: UseCase,
     registry: ModelRegistry,
 ) -> None:
     model_version = Mock(version="7", run_id="run-7")
@@ -285,7 +290,7 @@ def test_registry_rejects_runs_without_use_case_identity(
     with pytest.raises(ValueError, match="does not record a use-case name"):
         registry.load_registered_model(
             model_name="my_model",
-            expected_use_case=CHURN_USE_CASE,
+            expected_use_case=binary_use_case,
             model_alias="champion",
         )
 

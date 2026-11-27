@@ -10,16 +10,16 @@ stages:
     deps:
     - path: data/students/manifests/students-lr-oos-42.json
       hash: md5
-      md5: 92d2dc8c91d39d4a5356c594d9d76a91
-      size: 10284
+      md5: f90e20de7de4b3d1e15cb72cb6a60ca9
+      size: 10283
     - path: data/students/splits/oos-42_monitoring.parquet
       hash: md5
       md5: b144c1bf09a3fb435455050b6e393b84
       size: 47932
     - path: pyproject.toml
       hash: md5
-      md5: c8bcaac30765f9176b61c660bfc7a0e3
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit
       hash: md5
       md5: 339618aa1238ed65a48ed93e97a9a935.dir
@@ -36,8 +36,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: a7ae96cce2387996688d7ab5aeffe415
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/students.yaml:
         model.classifier: lr
@@ -49,8 +49,8 @@ stages:
     outs:
     - path: data/students/api_logs
       hash: md5
-      md5: 2d22a008ed24ff88da2c75eb95b6d482.dir
-      size: 1131457
+      md5: 33680977ca7cb601920232184e634b2a.dir
+      size: 2262874
       nfiles: 1
   ingest_prediction_logs:
     cmd: DATA_DIR=$PWD/data/students LOGGING_DIR=$PWD/data/students/api_logs uv
@@ -59,13 +59,13 @@ stages:
     deps:
     - path: data/students/api_logs
       hash: md5
-      md5: 2d22a008ed24ff88da2c75eb95b6d482.dir
-      size: 1131457
+      md5: 33680977ca7cb601920232184e634b2a.dir
+      size: 2262874
       nfiles: 1
     - path: pyproject.toml
       hash: md5
-      md5: c8bcaac30765f9176b61c660bfc7a0e3
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit
       hash: md5
       md5: 339618aa1238ed65a48ed93e97a9a935.dir
@@ -82,8 +82,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: a7ae96cce2387996688d7ab5aeffe415
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/students.yaml:
         monitoring.analysis_dataset: api_predictions
@@ -91,8 +91,8 @@ stages:
     outs:
     - path: data/students/api_predictions
       hash: md5
-      md5: 77ca0b033bcf2a16d05dc22ce4abbb94.dir
-      size: 105864
+      md5: db8d2659f4100952ae3914182ef2ce42.dir
+      size: 159669
       nfiles: 1
   ingest_error_logs:
     cmd: DATA_DIR=$PWD/data/students LOGGING_DIR=$PWD/data/students/api_logs uv
@@ -100,13 +100,13 @@ stages:
     deps:
     - path: data/students/api_logs
       hash: md5
-      md5: 2d22a008ed24ff88da2c75eb95b6d482.dir
-      size: 1131457
+      md5: 33680977ca7cb601920232184e634b2a.dir
+      size: 2262874
       nfiles: 1
     - path: pyproject.toml
       hash: md5
-      md5: c8bcaac30765f9176b61c660bfc7a0e3
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit/data
       hash: md5
       md5: 07000d51e61f1490df54209765917a12.dir
@@ -123,8 +123,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: a7ae96cce2387996688d7ab5aeffe415
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/students.yaml:
         monitoring.error_dataset: api_errors
@@ -150,22 +150,22 @@ stages:
       nfiles: 0
     - path: data/students/api_predictions
       hash: md5
-      md5: 77ca0b033bcf2a16d05dc22ce4abbb94.dir
-      size: 105864
+      md5: db8d2659f4100952ae3914182ef2ce42.dir
+      size: 159669
       nfiles: 1
     - path: data/students/manifests/students-lr-oos-42.json
       hash: md5
-      md5: 92d2dc8c91d39d4a5356c594d9d76a91
-      size: 10284
+      md5: f90e20de7de4b3d1e15cb72cb6a60ca9
+      size: 10283
     - path: data/students/predictions/students_lr_oos-42
       hash: md5
-      md5: 7861d4ee9046e2a1c7302ef116937a95.dir
-      size: 73782
+      md5: 2ad8fa4cc3a3f4e4c5c8d3ae4ac46fa5.dir
+      size: 73886
       nfiles: 1
     - path: pyproject.toml
       hash: md5
-      md5: c8bcaac30765f9176b61c660bfc7a0e3
-      size: 2171
+      md5: a6519f0a1cda8fb8f6a3172d4a974c54
+      size: 2309
     - path: src/mlkit
       hash: md5
       md5: 339618aa1238ed65a48ed93e97a9a935.dir
@@ -182,8 +182,8 @@ stages:
       nfiles: 3
     - path: uv.lock
       hash: md5
-      md5: a7ae96cce2387996688d7ab5aeffe415
-      size: 403234
+      md5: 8a5a5f611096c7029936e42e0cac94fe
+      size: 403259
     params:
       pipeline/students.yaml:
         model.classifier: lr
@@ -199,6 +199,6 @@ stages:
     outs:
     - path: data/students/monitoring/students_lr_oos-42
       hash: md5
-      md5: 8034be011ec0092a90c4038173106bff.dir
+      md5: cdeb0a0a0b32ec1188b3d609eafe08cd.dir
       size: 702
       nfiles: 1

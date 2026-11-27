@@ -10,9 +10,7 @@ import mlkit
 from mlkit.data import load_raw_data, validate_data
 from mlkit.data.deduplication import deduplicate_prepared_data
 from mlkit.models import IdentityFeatureBuilder
-from mlkit.use_cases import UseCase, get_use_case
-
-CHURN_USE_CASE = get_use_case("churn")
+from mlkit.use_cases import UseCase
 
 
 @pytest.fixture
@@ -25,16 +23,18 @@ def ingested_df(generated_training_csv) -> pd.DataFrame:
 
 @pytest.mark.unit
 def test_validate_data_accepts_valid_dataframe(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
 
-    validated_df = validate_data(df=ingested_df, use_case=CHURN_USE_CASE)
+    validated_df = validate_data(df=ingested_df, use_case=binary_use_case)
 
     assert validated_df.shape == ingested_df.shape
 
 
 @pytest.mark.unit
 def test_validate_data_rejects_invalid_dtype(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
     df = ingested_df.copy()
@@ -42,58 +42,62 @@ def test_validate_data_rejects_invalid_dtype(
     df["age"] = "age"
 
     with pytest.raises(ValidationError):
-        validate_data(df=df, use_case=CHURN_USE_CASE)
+        validate_data(df=df, use_case=binary_use_case)
 
 
 @pytest.mark.unit
 def test_validate_data_rejects_missing_required_column(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
     # Removing a required field should fail before row-level checks run.
     ingested_df = ingested_df.drop(columns=["age"])
 
     with pytest.raises(ValueError, match="age"):
-        validate_data(df=ingested_df, use_case=CHURN_USE_CASE)
+        validate_data(df=ingested_df, use_case=binary_use_case)
 
 
 @pytest.mark.unit
 def test_validate_data_rejects_negative_total_spend(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
     # Spending cannot be negative.
     ingested_df.loc[ingested_df.index[0], "total_spend"] = -100
 
     with pytest.raises(ValidationError, match="total_spend"):
-        validate_data(df=ingested_df, use_case=CHURN_USE_CASE)
+        validate_data(df=ingested_df, use_case=binary_use_case)
 
 
 @pytest.mark.unit
 def test_validate_data_rejects_age_below_minimum(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
     # The schema requires a realistic minimum age of 18.
     ingested_df.loc[ingested_df.index[0], "age"] = 10
 
     with pytest.raises(ValidationError, match="age"):
-        validate_data(df=ingested_df, use_case=CHURN_USE_CASE)
+        validate_data(df=ingested_df, use_case=binary_use_case)
 
 
 @pytest.mark.unit
 def test_validate_data_preserves_index_metadata_and_coerced_values(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
     df = ingested_df.iloc[:2].reset_index()
     df.index = pd.Index([7, 7], name="source_id")
     df["age"] = ["18", "115"]
-    df["churn"] = ["0", "1"]
+    df["label"] = ["0", "1"]
     df["reference_date"] = ["2026-01-01", "2026-01-02"]
     df["ignored"] = "extra"
 
-    result = validate_data(df=df, use_case=CHURN_USE_CASE)
+    result = validate_data(df=df, use_case=binary_use_case)
 
     assert result.index.equals(df.index)
     assert result["age"].tolist() == [18, 115]
-    assert result["churn"].tolist() == [0, 1]
+    assert result["label"].tolist() == [0, 1]
     assert result["customer_id"].tolist() == df["customer_id"].tolist()
     assert pd.api.types.is_datetime64_any_dtype(result["reference_date"])
     assert "ignored" not in result
@@ -105,42 +109,46 @@ def test_validate_data_preserves_index_metadata_and_coerced_values(
     ("column", "value"),
     [
         ("age", pd.NA),
-        ("churn", None),
-        ("churn", 2),
+        ("label", None),
+        ("label", 2),
         ("customer_id", "invalid"),
         ("reference_date", "not-a-date"),
     ],
 )
 def test_validate_data_rejects_invalid_present_values(
-    ingested_df: pd.DataFrame, column: str, value: object
+    binary_use_case: UseCase, ingested_df: pd.DataFrame, column: str, value: object
 ) -> None:
     df = ingested_df.iloc[:1].reset_index().astype(object)
     df["reference_date"] = "2026-01-01"
     df.loc[df.index[0], column] = value
     with pytest.raises(ValidationError, match=column):
-        validate_data(df=df, use_case=CHURN_USE_CASE)
+        validate_data(df=df, use_case=binary_use_case)
 
 
 @pytest.mark.unit
 def test_validate_data_handles_empty_frames_and_optional_metadata(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
-    features = ingested_df.loc[:, list(CHURN_USE_CASE.feature_columns)]
-    result = validate_data(df=features.iloc[:0], use_case=CHURN_USE_CASE)
+    features = ingested_df.loc[:, list(binary_use_case.feature_columns)]
+    result = validate_data(df=features.iloc[:0], use_case=binary_use_case)
     pd.testing.assert_frame_equal(result, features.iloc[:0])
     with pytest.raises(ValueError, match="age"):
-        validate_data(df=features.iloc[:0].drop(columns="age"), use_case=CHURN_USE_CASE)
-    assert len(validate_data(df=features, use_case=CHURN_USE_CASE)) == len(features)
+        validate_data(
+            df=features.iloc[:0].drop(columns="age"), use_case=binary_use_case
+        )
+    assert len(validate_data(df=features, use_case=binary_use_case)) == len(features)
 
 
 @pytest.mark.unit
 def test_validate_data_reports_absolute_row_position_after_first_chunk(
+    binary_use_case: UseCase,
     ingested_df: pd.DataFrame,
 ) -> None:
     df = pd.concat([ingested_df.iloc[:1]] * 10_002, ignore_index=True)
     df.loc[10_001, "age"] = 17
     with pytest.raises(ValidationError) as error:
-        validate_data(df, CHURN_USE_CASE)
+        validate_data(df, binary_use_case)
     assert error.value.errors()[0]["loc"] == (10_001, "age")
 
 

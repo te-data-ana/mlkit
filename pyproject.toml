@@ -39,6 +39,9 @@ mlkit = "mlkit:main"
 requires = ["uv_build>=0.12.10,<0.14.0"]
 build-backend = "uv_build"
 
+[tool.uv]
+default-groups = ["dev", "use-cases"]
+
 [tool.uv.workspace]
 members = ["use_cases"]
 
@@ -56,8 +59,8 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.6",
-    "mlkit-use-cases",
 ]
+use-cases = ["mlkit-use-cases"]
 notebooks = [
     "ipykernel>=7.4.0",
     "jupyter>=1.1.1",
@@ -68,7 +71,8 @@ notebooks = [
 [tool.pytest.ini_options]
 testpaths = ["tests", "use_cases/tests"]
 addopts = [
-    "--import-mode=importlib",
+    # Importlib mode creates a shadow use_cases namespace during test collection.
+    "--import-mode=prepend",
     "--cov=src/mlkit",
     "--cov-report=term-missing",
     "--cov-report=html",

@@ -16,6 +16,7 @@ from mlkit.serving import api
 from mlkit.serving.model_loader import LoadedModel, ModelMetadata
 from mlkit.training import train_model
 from mlkit.use_cases import UseCase
+from mlkit.use_cases.registry import get_use_case
 
 
 class AlternateInput(BaseModel):
@@ -35,6 +36,18 @@ ALTERNATE_USE_CASE = UseCase(
 
 
 @pytest.mark.unit
+def test_synthetic_registry_discovers_use_cases(
+    synthetic_use_case_registry: None,
+    binary_use_case: UseCase,
+    multiclass_use_case: UseCase,
+) -> None:
+    assert get_use_case(binary_use_case.name) is binary_use_case
+    assert get_use_case(multiclass_use_case.name) is multiclass_use_case
+    with pytest.raises(ValueError, match="Unknown use case"):
+        get_use_case("missing")
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("classes", "strategy"),
     [
@@ -48,6 +61,14 @@ def test_class_selection_strategy_follows_target_classes(
 ) -> None:
     use_case = replace(ALTERNATE_USE_CASE, target_classes=classes)
     assert use_case.class_selection_strategy == strategy
+
+
+@pytest.mark.unit
+def test_use_case_rejects_negative_multiclass_label(
+    multiclass_use_case: UseCase,
+) -> None:
+    with pytest.raises(ValueError, match="nonnegative integers"):
+        replace(multiclass_use_case, target_classes=(-1, 0, 1))
 
 
 def test_split_strategy_contract_validates_time_and_event_metadata() -> None:

@@ -15,9 +15,24 @@ from mlkit.training.tuning import (
     _suggest_parameters,
     optimize_hyperparameters,
 )
-from mlkit.use_cases import get_use_case
+from mlkit.use_cases import UseCase
 
-CHURN_USE_CASE = get_use_case("churn")
+
+@pytest.mark.unit
+def test_optimize_multiclass_pr_auc(
+    multiclass_use_case: UseCase,
+    multiclass_data_factory: Callable[[int], pd.DataFrame],
+    config_factory: Callable[..., TrainingConfig],
+) -> None:
+    config = replace(
+        config_factory(), tuning=TuningConfig(n_trials=1, n_splits=2, metric="pr_auc")
+    )
+    result = optimize_hyperparameters(
+        use_case=multiclass_use_case,
+        config=config,
+        train_df=multiclass_data_factory(90),
+    )
+    assert 0 <= result.best_score <= 1
 
 
 @pytest.mark.unit
@@ -74,6 +89,7 @@ def test_catalog_search_space_suggestions_build_each_model(
 
 @pytest.mark.unit
 def test_optimize_hyperparameters_returns_reproducible_study_result(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
@@ -113,7 +129,7 @@ def test_optimize_hyperparameters_returns_reproducible_study_result(
     result = optimize_hyperparameters(
         config=config,
         train_df=train_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         n_jobs=2,
     )
 
@@ -132,6 +148,7 @@ def test_optimize_hyperparameters_returns_reproducible_study_result(
 
 @pytest.mark.unit
 def test_optimize_hyperparameters_uses_declared_feature_columns(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
@@ -166,17 +183,18 @@ def test_optimize_hyperparameters_uses_declared_feature_columns(
     optimize_hyperparameters(
         config=config,
         train_df=train_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert observed_columns
     assert all(
-        columns == list(CHURN_USE_CASE.feature_columns) for columns in observed_columns
+        columns == list(binary_use_case.feature_columns) for columns in observed_columns
     )
 
 
 @pytest.mark.unit
 def test_optimize_hyperparameters_uses_decision_function_for_svm(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
@@ -212,7 +230,7 @@ def test_optimize_hyperparameters_uses_decision_function_for_svm(
     result = optimize_hyperparameters(
         config=config,
         train_df=train_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert result.n_trials == 1
@@ -221,6 +239,7 @@ def test_optimize_hyperparameters_uses_decision_function_for_svm(
 
 @pytest.mark.unit
 def test_optimize_hyperparameters_rejects_classifier_without_search_space(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     sample_training_df: pd.DataFrame,
 ) -> None:
@@ -231,5 +250,5 @@ def test_optimize_hyperparameters_rejects_classifier_without_search_space(
         optimize_hyperparameters(
             config=config,
             train_df=sample_training_df,
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
         )

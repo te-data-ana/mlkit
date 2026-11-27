@@ -1,8 +1,6 @@
 """Tests for the UCI students multiclass use case."""
 
 import json
-from dataclasses import replace
-from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,18 +15,15 @@ from use_cases.students.features import CATEGORICAL_COLUMNS, StudentsFeatureBuil
 
 from mlkit.config import RuntimeSettings
 from mlkit.config.loader import load_config
-from mlkit.config.schemas import TuningConfig
 from mlkit.data.splitting import create_data_splits
 from mlkit.data.uci import prepare_uci_snapshot
 from mlkit.monitoring.core import _event_log_to_df, build_monitoring_report
 from mlkit.serving import api
 from mlkit.serving.model_loader import LoadedModel, ModelMetadata, load_model
-from mlkit.serving.prediction_logger import PredictionLogger
-from mlkit.serving.predictor import PredictionResult, Predictor
+from mlkit.serving.predictor import Predictor
 from mlkit.tracking import TrainingManifest
 from mlkit.train import run_training_job
 from mlkit.training.model_training import train_model
-from mlkit.training.tuning import optimize_hyperparameters
 from mlkit.use_cases import get_use_case
 
 
@@ -140,86 +135,6 @@ def test_builder_marks_categories_without_mutating_input() -> None:
         for name in CATEGORICAL_COLUMNS
     )
     assert pd.api.types.is_numeric_dtype(result["curricular_units_1st_sem_grade"])
-
-
-@pytest.mark.unit
-def test_prediction_uses_model_class_order_for_single_and_batch() -> None:
-    class Model:
-        classes_ = np.array([2, 0, 1])
-
-        def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
-            return np.tile([0.6, 0.1, 0.3], (len(features), 1))
-
-    predictor = Predictor(
-        LoadedModel(
-            Model(),
-            ModelMetadata(
-                model_name="students",
-                model_alias=None,
-                model_version=1,
-                model_threshold=None,
-            ),
-            STUDENTS_USE_CASE,
-        )
-    )
-    single = predictor.predict(StudentsInputFeatures.model_validate(_record()))
-    assert single.predicted_class == 2
-    assert single.predicted_probabilities == {"0": 0.1, "1": 0.3, "2": 0.6}
-    batch = predictor.predict_batch(pd.DataFrame([_record()]))
-    assert batch["predicted_class"].tolist() == [2]
-    assert batch["predicted_probability_0"].tolist() == [0.1]
-
-
-@pytest.mark.unit
-def test_prediction_log_rejects_inconsistent_multiclass_output(tmp_path: Path) -> None:
-    logger = PredictionLogger(
-        prediction_log_path=tmp_path / "predictions.jsonl",
-        error_log_path=tmp_path / "errors.jsonl",
-        log_features=False,
-        use_case=STUDENTS_USE_CASE,
-    )
-    prediction = PredictionResult(
-        predicted_class=0,
-        predicted_probability=None,
-        timestamp=datetime.now(UTC),
-        metadata=ModelMetadata(
-            model_name="students",
-            model_alias=None,
-            model_version=1,
-            model_threshold=None,
-        ),
-        predicted_probabilities={"0": 0.1, "1": 0.2, "2": 0.7},
-    )
-    with pytest.raises(ValueError, match="argmax"):
-        logger.log_prediction(
-            request_id="test", latency_ms=1, prediction=prediction, features=None
-        )
-    assert not (tmp_path / "predictions.jsonl").exists()
-
-
-@pytest.mark.unit
-def test_splitting_and_tuning_require_all_classes(tmp_path: Path) -> None:
-    frame = _frame(90)
-    with pytest.raises(ValueError, match="nonnegative integers"):
-        replace(STUDENTS_USE_CASE, target_classes=(-1, 0, 1))
-    with pytest.raises(ValueError, match="all classes"):
-        _ = create_data_splits(
-            use_case=STUDENTS_USE_CASE,
-            df=frame[frame["target"] != 2],
-            settings=RuntimeSettings(data_dir=tmp_path),
-        )
-    config, _ = load_config(
-        "lr.yaml", path=Path(__file__).resolve().parents[3] / "src/config"
-    )
-    config = replace(
-        config, tuning=TuningConfig(n_trials=1, n_splits=2, metric="pr_auc")
-    )
-    result = optimize_hyperparameters(
-        use_case=STUDENTS_USE_CASE,
-        config=config,
-        train_df=frame,
-    )
-    assert 0 <= result.best_score <= 1
 
 
 @pytest.mark.usecase

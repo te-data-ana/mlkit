@@ -5,15 +5,41 @@ from unittest.mock import Mock
 import numpy as np
 import pandas as pd
 import pytest
-from use_cases.churn.schema import ChurnInputFeatures
+from pydantic import BaseModel
 
-from mlkit.serving.model_loader import LoadedModel
+from mlkit.serving.model_loader import LoadedModel, ModelMetadata
 from mlkit.serving.predictor import PredictionResult, Predictor
+from mlkit.use_cases import UseCase
+
+
+@pytest.mark.unit
+def test_multiclass_prediction_uses_model_class_order(
+    multiclass_use_case: UseCase, sample_input: BaseModel
+) -> None:
+    class Model:
+        classes_ = np.array([2, 0, 1])
+
+        def predict_proba(self, features: pd.DataFrame) -> np.ndarray:
+            return np.tile([0.6, 0.1, 0.3], (len(features), 1))
+
+    predictor = Predictor(
+        LoadedModel(
+            Model(),
+            ModelMetadata("sample", None, 1, None),
+            multiclass_use_case,
+        )
+    )
+    single = predictor.predict(sample_input)
+    assert single.predicted_class == 2
+    assert single.predicted_probabilities == {"0": 0.1, "1": 0.3, "2": 0.6}
+    batch = predictor.predict_batch(pd.DataFrame([sample_input.model_dump()]))
+    assert batch["predicted_class"].tolist() == [2]
+    assert batch["predicted_probability_0"].tolist() == [0.1]
 
 
 @pytest.mark.unit
 def test_predict_returns_probability_class_and_metadata(
-    mock_model_factory: Callable[..., LoadedModel], sample_input: ChurnInputFeatures
+    mock_model_factory: Callable[..., LoadedModel], sample_input: BaseModel
 ) -> None:
     loaded_model = mock_model_factory(proba=0.8, threshold=0.5)
 
@@ -42,7 +68,7 @@ def test_predict_classifies_depending_on_threshold(
     threshold: float,
     expected_class: int,
     mock_model_factory: Callable[..., LoadedModel],
-    sample_input: ChurnInputFeatures,
+    sample_input: BaseModel,
 ) -> None:
     loaded_model = mock_model_factory(proba=probability, threshold=threshold)
 

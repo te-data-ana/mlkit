@@ -18,7 +18,7 @@ from mlkit.config.schemas import TrainingConfig
 from mlkit.models import build_classifier_pipeline, create_model
 from mlkit.models.features import IdentityFeatureBuilder
 from mlkit.training import TrainingResult
-from mlkit.use_cases import UseCase, get_use_case
+from mlkit.use_cases import UseCase
 
 
 @pytest.mark.unit
@@ -74,6 +74,7 @@ def test_setup_local_experiment_returns_existing_experiment_id(
 
 @pytest.mark.unit
 def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     sample_config_yaml: Path,
     mock_training_result: TrainingResult,
@@ -99,7 +100,7 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
 
     mock_training_result.classifier_config["random_state"] = 42
     tracking.log_experiment_result(
-        use_case=get_use_case("churn"),
+        use_case=binary_use_case,
         result=mock_training_result,
         config=config_factory(),
         config_file_path=sample_config_yaml,
@@ -146,6 +147,7 @@ def test_log_experiment_result_logs_metrics_parameters_model_and_artifacts(
 
 @pytest.mark.unit
 def test_log_experiment_result_uses_multiclass_strategy(
+    multiclass_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     sample_config_yaml: Path,
     mock_training_result: TrainingResult,
@@ -160,7 +162,7 @@ def test_log_experiment_result_uses_multiclass_strategy(
         mock_training_result, threshold=None, threshold_data="not_applicable"
     )
     tracking.log_experiment_result(
-        use_case=get_use_case("students"),
+        use_case=multiclass_use_case,
         result=result,
         config=config_factory(),
         config_file_path=sample_config_yaml,
@@ -179,8 +181,12 @@ def test_log_experiment_result_uses_multiclass_strategy(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(("name", "threshold"), [("churn", None), ("students", 0.4)])
+@pytest.mark.parametrize(
+    ("name", "threshold"), [("binary_uc", None), ("multi_uc", 0.4)]
+)
 def test_log_experiment_result_rejects_inconsistent_threshold(
+    binary_use_case: UseCase,
+    multiclass_use_case: UseCase,
     name: str,
     threshold: float | None,
     sample_config_yaml: Path,
@@ -189,7 +195,9 @@ def test_log_experiment_result_rejects_inconsistent_threshold(
 ) -> None:
     with pytest.raises(ValueError, match="threshold"):
         tracking.log_experiment_result(
-            use_case=get_use_case(name),
+            use_case={
+                case.name: case for case in (binary_use_case, multiclass_use_case)
+            }[name],
             result=replace(mock_training_result, threshold=threshold),
             config=config_factory(),
             config_file_path=sample_config_yaml,
@@ -257,6 +265,7 @@ def test_log_experiment_result_trusts_selected_use_case_feature_builder(
 @pytest.mark.integration
 @pytest.mark.parametrize("method", ["sigmoid", "isotonic"])
 def test_logged_calibrated_model_can_be_reloaded(
+    binary_use_case: UseCase,
     method: str,
     tmp_path: Path,
     sample_config_yaml: Path,
@@ -264,7 +273,7 @@ def test_logged_calibrated_model_can_be_reloaded(
     config_factory: Callable[..., TrainingConfig],
     mlflow_test_setup: dict[str, object],
 ) -> None:
-    use_case = get_use_case("churn")
+    use_case = binary_use_case
     config = config_factory(classifier="lr")
     config.calibration.n_splits = 2
     train_df = sample_training_df.copy()

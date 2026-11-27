@@ -5,9 +5,9 @@ from unittest.mock import ANY, Mock
 
 import pytest
 
-from mlkit.use_cases import get_use_case
+from mlkit.use_cases import UseCase
 
-CHURN_USE_CASE = get_use_case("churn")
+pytestmark = pytest.mark.usefixtures("synthetic_use_case_registry")
 
 
 @pytest.mark.smoke
@@ -87,7 +87,9 @@ def test_package_main_prints_help_for_empty_args(capsys) -> None:
 
 
 @pytest.mark.smoke
-def test_package_main_dispatches_monitor_command(monkeypatch) -> None:
+def test_package_main_dispatches_monitor_command(
+    binary_use_case: UseCase, monkeypatch
+) -> None:
     import mlkit
 
     observed: dict[str, object] = {}
@@ -106,7 +108,7 @@ def test_package_main_dispatches_monitor_command(monkeypatch) -> None:
             "--analysis_csv",
             "analysis.csv",
             "--use_case",
-            "churn",
+            "binary_uc",
             "--output_dir",
             "reports",
         ]
@@ -117,7 +119,7 @@ def test_package_main_dispatches_monitor_command(monkeypatch) -> None:
         "analysis_csv": Path("analysis.csv"),
         "prediction_log": None,
         "error_log": None,
-        "use_case": CHURN_USE_CASE,
+        "use_case": binary_use_case,
         "output_dir": Path("reports"),
     }
 
@@ -189,6 +191,7 @@ def test_package_main_builds_report_from_partitioned_datasets(
 
 @pytest.mark.smoke
 def test_package_main_uses_monitoring_model_manifest(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -240,7 +243,7 @@ def test_package_main_uses_monitoring_model_manifest(
             "--analysis_dataset",
             "analysis",
             "--use_case",
-            "churn",
+            "binary_uc",
             "--model_manifest",
             "manifests/churn-hgb-OOT_26Q2.json",
             "--mlflow_experiment_name",
@@ -254,7 +257,7 @@ def test_package_main_uses_monitoring_model_manifest(
     assert observed_report == {
         "reference": datasets["reference"],
         "analysis": datasets["analysis"],
-        "use_case": CHURN_USE_CASE,
+        "use_case": binary_use_case,
         "source_reference": "batch",
         "source_analysis": "api",
         "errors": None,
@@ -292,7 +295,7 @@ def test_package_main_rejects_monitor_manifest_with_explicit_model(
                 "--analysis_dataset",
                 "analysis",
                 "--use_case",
-                "churn",
+                "binary_uc",
                 "--model_manifest",
                 "manifests/model.json",
                 "--model_version",
@@ -330,7 +333,7 @@ def test_package_main_passes_manifest_to_api_for_serving(
             "--model_manifest",
             "manifests/unregistered.json",
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
@@ -361,7 +364,7 @@ def test_cli_port_override_wins_over_environment(
         [
             "serve",
             "--use_case",
-            "churn",
+            "binary_uc",
             "--model_manifest",
             str(tmp_path / "manifest.json"),
             "--port",
@@ -388,11 +391,12 @@ def test_non_serving_command_does_not_read_serving_settings(
             )
         ),
     )
-    mlkit.main(["train", "--use_case", "churn", "--config", "config.yaml"])
+    mlkit.main(["train", "--use_case", "binary_uc", "--config", "config.yaml"])
 
 
 @pytest.mark.smoke
 def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -422,7 +426,7 @@ def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
             "--prediction_log",
             "custom_predictions.jsonl",
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
@@ -431,7 +435,7 @@ def test_package_main_dispatches_api_file_monitoring_with_configured_error_log(
         "analysis_csv": None,
         "prediction_log": Path("custom_predictions.jsonl"),
         "error_log": settings.error_log_path,
-        "use_case": CHURN_USE_CASE,
+        "use_case": binary_use_case,
         "output_dir": settings.output_dir,
     }
 
@@ -464,7 +468,7 @@ def test_package_main_dispatches_serve_command(monkeypatch) -> None:
             "9000",
             "--reload",
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
@@ -479,6 +483,7 @@ def test_package_main_dispatches_serve_command(monkeypatch) -> None:
 
 @pytest.mark.smoke
 def test_package_main_dispatches_prepare_data(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -519,12 +524,14 @@ def test_package_main_dispatches_prepare_data(
         fake_write_parquet_dataset,
     )
 
-    mlkit.main(["prepare-data", "--input_csv", "training.csv", "--use_case", "churn"])
+    mlkit.main(
+        ["prepare-data", "--input_csv", "training.csv", "--use_case", "binary_uc"]
+    )
 
     assert observed == {
         "load": {"file_name": "training.csv", "data_dir": tmp_path / "raw"},
         "validated_input": raw_data,
-        "use_case": CHURN_USE_CASE,
+        "use_case": binary_use_case,
         "write": {
             "df": validated_data,
             "dataset_name": "partitioned",
@@ -602,10 +609,10 @@ def test_package_main_dispatches_create_split(
 @pytest.mark.parametrize(
     ("use_case", "args", "message"),
     [
-        ("churn", [], "Temporal splitting requires"),
-        ("phishing", [], "Random splitting requires"),
+        ("binary_uc", [], "Temporal splitting requires"),
+        ("random_uc", [], "Random splitting requires"),
         (
-            "phishing",
+            "random_uc",
             ["--input_parquet", "data.parquet", "--start_date", "2024-01-01"],
             "Random splitting requires",
         ),
@@ -641,7 +648,7 @@ def test_create_split_cli_applies_random_fractions(
         [
             "create-split",
             "--use_case",
-            "phishing",
+            "random_uc",
             "--input_parquet",
             "prepared.parquet",
             "--test_fraction",
@@ -747,7 +754,7 @@ def test_monitor_loads_undated_reference_and_dated_analysis(
         "--error_dataset",
         "errors",
         "--use_case",
-        "phishing",
+        "random_uc",
     ]
     if override is not None:
         arguments.extend(["--timestamp_column", override])

@@ -11,9 +11,7 @@ from sklearn.pipeline import Pipeline
 from mlkit.config.schemas import TrainingConfig
 from mlkit.evaluation import select_f1_threshold
 from mlkit.training import TrainingResult, model_training, train_model
-from mlkit.use_cases import get_use_case
-
-CHURN_USE_CASE = get_use_case("churn")
+from mlkit.use_cases import UseCase
 
 
 def assert_training_result(result) -> None:
@@ -34,6 +32,7 @@ def assert_training_result(result) -> None:
 @pytest.mark.unit
 @pytest.mark.parametrize("classifier", ["lr", "dt", "rf", "hgb"])
 def test_train_returns_valid_result_for_supported_classifier(
+    binary_use_case: UseCase,
     classifier: Literal["lr", "dt", "rf", "hgb"],
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
@@ -48,7 +47,7 @@ def test_train_returns_valid_result_for_supported_classifier(
         fit_df=train_df.iloc[:4],
         validation_df=train_df.iloc[4:],
         test_df=test_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert_training_result(result)
@@ -69,7 +68,7 @@ def test_train_returns_valid_result_for_supported_classifier(
     assert log_positions == sorted(log_positions)
 
     X = temporal_sample_training_df.iloc[:6].loc[
-        :, list(CHURN_USE_CASE.feature_columns)
+        :, list(binary_use_case.feature_columns)
     ]
 
     predictions = result.trained_pipeline.predict(X)
@@ -84,6 +83,7 @@ def test_train_returns_valid_result_for_supported_classifier(
 
 @pytest.mark.unit
 def test_train_rejects_unknown_classifier(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
 ) -> None:
@@ -98,12 +98,13 @@ def test_train_rejects_unknown_classifier(
             fit_df=train_df.iloc[:4],
             validation_df=train_df.iloc[4:],
             test_df=test_df,
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
         )
 
 
 @pytest.mark.unit
 def test_train_returns_reproducible_metrics_for_same_input(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
 ) -> None:
@@ -117,14 +118,14 @@ def test_train_returns_reproducible_metrics_for_same_input(
         fit_df=train_df.iloc[:4],
         validation_df=train_df.iloc[4:],
         test_df=test_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
     result2 = train_model(
         config=cfg,
         fit_df=train_df.iloc[:4],
         validation_df=train_df.iloc[4:],
         test_df=test_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert result1.metrics["roc_auc"] == result2.metrics["roc_auc"]
@@ -133,6 +134,7 @@ def test_train_returns_reproducible_metrics_for_same_input(
 
 @pytest.mark.unit
 def test_train_uses_override_and_declared_feature_columns(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     sample_training_df: pd.DataFrame,
 ) -> None:
@@ -146,18 +148,19 @@ def test_train_uses_override_and_declared_feature_columns(
         fit_df=dated_df.iloc[:5],
         validation_df=dated_df.iloc[5:7],
         test_df=dated_df.iloc[7:],
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_params_override={"max_depth": 2},
     )
 
     assert result.classifier_config["max_depth"] == 2
-    assert result.feature_names_in == list(CHURN_USE_CASE.feature_columns)
+    assert result.feature_names_in == list(binary_use_case.feature_columns)
     assert "reference_date" not in result.feature_names_in
     assert "customer_id" not in result.feature_names_in
 
 
 @pytest.mark.unit
 def test_train_rejects_missing_use_case_feature(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     sample_training_df: pd.DataFrame,
 ) -> None:
@@ -173,13 +176,14 @@ def test_train_rejects_missing_use_case_feature(
             fit_df=train_df.iloc[:5],
             validation_df=train_df.iloc[5:7],
             test_df=train_df.iloc[7:],
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
         )
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("method", ["sigmoid", "isotonic"])
 def test_train_fits_time_aware_calibrated_classifier(
+    binary_use_case: UseCase,
     method: str,
     config_factory: Callable[..., TrainingConfig],
     sample_training_df: pd.DataFrame,
@@ -197,7 +201,7 @@ def test_train_fits_time_aware_calibrated_classifier(
         fit_df=train_df.iloc[:70],
         validation_df=train_df.iloc[70:],
         test_df=sample_training_df.copy(),
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         calibration_method=method,
         n_jobs=2,
     )
@@ -217,6 +221,7 @@ def test_train_fits_time_aware_calibrated_classifier(
 
 @pytest.mark.unit
 def test_train_uses_job_budget_for_uncalibrated_classifier(
+    binary_use_case: UseCase,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
 ) -> None:
@@ -229,7 +234,7 @@ def test_train_uses_job_budget_for_uncalibrated_classifier(
         fit_df=train_df.iloc[:4],
         validation_df=train_df.iloc[4:],
         test_df=test_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         n_jobs=2,
     )
 
@@ -240,6 +245,7 @@ def test_train_uses_job_budget_for_uncalibrated_classifier(
 
 @pytest.mark.unit
 def test_train_fits_once_and_selects_threshold_from_validation(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     config_factory: Callable[..., TrainingConfig],
     temporal_sample_training_df: pd.DataFrame,
@@ -255,13 +261,13 @@ def test_train_fits_once_and_selects_threshold_from_validation(
         fit_df=train_df.iloc[:4],
         validation_df=train_df.iloc[4:],
         test_df=test_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     validation_df = train_df.iloc[4:]
-    X_validation = validation_df.loc[:, list(CHURN_USE_CASE.feature_columns)]
+    X_validation = validation_df.loc[:, list(binary_use_case.feature_columns)]
     probabilities = result.trained_pipeline.predict_proba(X_validation)[:, 1]
-    expected_threshold = select_f1_threshold(validation_df["churn"], probabilities)
+    expected_threshold = select_f1_threshold(validation_df["label"], probabilities)
 
     fit_spy.assert_called_once()
     assert fit_spy.call_args.kwargs["train_df"].equals(train_df.iloc[:4])

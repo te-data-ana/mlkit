@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from use_cases.churn.schema import ChurnInputFeatures
+from pydantic import BaseModel
 
 from mlkit.serving import api
 from mlkit.serving.model_loader import LoadedModel, ModelMetadata
@@ -16,22 +16,25 @@ from mlkit.serving.schemas import (
     PredictionErrorEvent,
     PredictionEvent,
 )
-from mlkit.use_cases import get_use_case
+from mlkit.use_cases import UseCase
 
 
 @pytest.fixture
 def client(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     mock_model_factory: Callable[..., LoadedModel],
 ) -> Generator[Any, Any, Any]:
     monkeypatch.setattr(api, "load_model", lambda **_: mock_model_factory())
-    with TestClient(api.create_app(use_case=get_use_case("churn"))) as test_client:
+    with TestClient(api.create_app(use_case=binary_use_case)) as test_client:
         yield test_client
 
 
 @pytest.fixture
-def sample_input() -> ChurnInputFeatures:
-    return ChurnInputFeatures(
+def sample_input(
+    binary_use_case: UseCase,
+) -> BaseModel:
+    return binary_use_case.feature_schema(
         age=45,
         tenure=24,
         usage_frequency=12,
@@ -46,7 +49,7 @@ def sample_input() -> ChurnInputFeatures:
 
 
 @pytest.fixture
-def sample_dict(sample_input: ChurnInputFeatures) -> dict[str, Any]:
+def sample_dict(sample_input: BaseModel) -> dict[str, Any]:
     return sample_input.model_dump()
 
 
@@ -71,7 +74,9 @@ def sample_prediction_result(sample_metadata) -> PredictionResult:
 
 
 @pytest.fixture
-def mock_model_factory() -> Callable[..., LoadedModel]:
+def mock_model_factory(
+    binary_use_case: UseCase,
+) -> Callable[..., LoadedModel]:
     def factory(proba: float = 0.5, threshold: float = 0.5) -> LoadedModel:
         class MockModel:
             def predict_proba(self, X):
@@ -87,7 +92,7 @@ def mock_model_factory() -> Callable[..., LoadedModel]:
         return LoadedModel(
             model=MockModel(),
             metadata=metadata,
-            use_case=get_use_case("churn"),
+            use_case=binary_use_case,
         )
 
     return factory

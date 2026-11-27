@@ -2403,7 +2403,6 @@ dev = [
     { name = "detect-secrets" },
     { name = "dvc" },
     { name = "httpx2" },
-    { name = "mlkit-use-cases" },
     { name = "pip-licenses" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -2415,6 +2414,9 @@ notebooks = [
     { name = "jupyter" },
     { name = "jupyterlab" },
     { name = "seaborn" },
+]
+use-cases = [
+    { name = "mlkit-use-cases" },
 ]
 
 [package.metadata]
@@ -2441,7 +2443,6 @@ dev = [
     { name = "detect-secrets", specifier = ">=1.5.0" },
     { name = "dvc", specifier = ">=3.67.1" },
     { name = "httpx2", specifier = ">=2.16.0" },
-    { name = "mlkit-use-cases", editable = "use_cases" },
     { name = "pip-licenses", specifier = ">=5.5.5" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest", specifier = ">=9.1.1" },
@@ -2454,6 +2455,7 @@ notebooks = [
     { name = "jupyterlab", specifier = ">=4.6.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
 ]
+use-cases = [{ name = "mlkit-use-cases", editable = "use_cases" }]
 
 [[package]]
 name = "mlkit-use-cases"

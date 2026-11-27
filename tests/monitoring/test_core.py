@@ -7,9 +7,7 @@ import pandas as pd
 import pytest
 
 from mlkit.monitoring import core
-from mlkit.use_cases import get_use_case
-
-CHURN_USE_CASE = get_use_case("churn")
+from mlkit.use_cases import UseCase
 
 
 class _FakeResult:
@@ -84,6 +82,7 @@ def test_read_scored_csv_normalizes_columns_and_raises_for_missing_file(
 
 @pytest.mark.unit
 def test_event_log_to_df_handles_empty_invalid_and_valid_logs(
+    binary_use_case: UseCase,
     tmp_path: Path,
     valid_prediction_log_path: Path,
 ) -> None:
@@ -91,37 +90,38 @@ def test_event_log_to_df_handles_empty_invalid_and_valid_logs(
     empty.write_text("", encoding="utf-8")
 
     assert core._event_log_to_df(
-        path=empty, event="prediction", use_case=CHURN_USE_CASE
+        path=empty, event="prediction", use_case=binary_use_case
     ).empty
     assert core._event_log_to_df(
-        path=None, event="prediction_error", use_case=CHURN_USE_CASE
+        path=None, event="prediction_error", use_case=binary_use_case
     ).empty
 
     bad = tmp_path / "bad.jsonl"
     bad.write_text('{"event":"prediction_error"}\n', encoding="utf-8")
     with pytest.raises(ValueError, match="other than prediction"):
-        core._event_log_to_df(path=bad, event="prediction", use_case=CHURN_USE_CASE)
+        core._event_log_to_df(path=bad, event="prediction", use_case=binary_use_case)
 
     df = core._event_log_to_df(
-        path=valid_prediction_log_path, event="prediction", use_case=CHURN_USE_CASE
+        path=valid_prediction_log_path, event="prediction", use_case=binary_use_case
     )
     expected = {
         "event",
-        CHURN_USE_CASE.time_column,
+        binary_use_case.time_column,
         "latency_ms",
         core.MODEL_VERSION_COLUMN,
     }
 
     assert expected.issubset(df.columns)
-    assert df[CHURN_USE_CASE.time_column].dtype.kind == "M"
+    assert df[binary_use_case.time_column].dtype.kind == "M"
     assert df["latency_ms"].tolist() == pytest.approx([12.5, 18.0])
 
 
 @pytest.mark.unit
 def test_event_log_to_df_uses_alternate_use_case_time_column(
+    binary_use_case: UseCase,
     tmp_path: Path,
 ) -> None:
-    use_case = replace(CHURN_USE_CASE, time_column="event_date")
+    use_case = replace(binary_use_case, time_column="event_date")
     path = tmp_path / "events.jsonl"
     path.write_text(
         '{"event":"prediction","event_date":"2026-02-01T00:00:00Z",'
@@ -137,6 +137,7 @@ def test_event_log_to_df_uses_alternate_use_case_time_column(
 
 @pytest.mark.unit
 def test_prepare_validated_df_requires_predictions_target_and_features(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
 ) -> None:
     df = valid_reference_df.copy()
@@ -148,7 +149,7 @@ def test_prepare_validated_df_requires_predictions_target_and_features(
             df=bad_probability,
             name="reference",
             source="batch",
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
             require_predictions=True,
             require_target=True,
         )
@@ -161,19 +162,19 @@ def test_prepare_validated_df_requires_predictions_target_and_features(
             df=missing_prediction_cols,
             name="reference",
             source="batch",
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
             require_predictions=True,
             require_target=True,
         )
 
     with pytest.raises(ValueError, match="all target classes"):
         single_target = df.copy()
-        single_target[CHURN_USE_CASE.target_column] = [0, 0, 0]
+        single_target[binary_use_case.target_column] = [0, 0, 0]
         core._prepare_validated_df(
             df=single_target,
             name="reference",
             source="batch",
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
             require_predictions=True,
             require_target=True,
         )
@@ -182,13 +183,13 @@ def test_prepare_validated_df_requires_predictions_target_and_features(
         df=df.copy(),
         name="reference",
         source="batch",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         require_predictions=True,
         require_target=True,
         require_features=False,
     )
     assert prepared["source"].unique().tolist() == ["batch"]
-    assert prepared[CHURN_USE_CASE.target_column].nunique() == 2
+    assert prepared[binary_use_case.target_column].nunique() == 2
     assert prepared[core.MODEL_VERSION_COLUMN].dtype.kind in {"i", "u"}
 
 
@@ -212,7 +213,9 @@ def test_flatten_and_extract_columns_handle_multiindex() -> None:
 
 
 @pytest.mark.unit
-def test_drift_alert_summary_and_cbpe_summary_build_monitoring_tables() -> None:
+def test_drift_alert_summary_and_cbpe_summary_build_monitoring_tables(
+    binary_use_case: UseCase,
+) -> None:
     result = _FakeResult(
         [
             ("chunk", "period"),
@@ -224,12 +227,12 @@ def test_drift_alert_summary_and_cbpe_summary_build_monitoring_tables() -> None:
         result=result,
         model_version=2,
         calculator_name="univariate",
-        time_column=CHURN_USE_CASE.time_column,
+        time_column=binary_use_case.time_column,
     )
     assert list(summary.columns) == [
         core.PERIOD_COLUMN,
         core.MODEL_VERSION_COLUMN,
-        CHURN_USE_CASE.time_column,
+        binary_use_case.time_column,
         "univariate_alert_count",
     ]
     assert summary.iloc[0][core.MODEL_VERSION_COLUMN] == 2
@@ -246,12 +249,12 @@ def test_drift_alert_summary_and_cbpe_summary_build_monitoring_tables() -> None:
         result=cbpe_result,
         model_version=3,
         calculator_name="cbpe",
-        time_column=CHURN_USE_CASE.time_column,
+        time_column=binary_use_case.time_column,
     )
     assert cbpe_summary.columns.tolist() == [
         core.PERIOD_COLUMN,
         core.MODEL_VERSION_COLUMN,
-        CHURN_USE_CASE.time_column,
+        binary_use_case.time_column,
         "cbpe_roc_auc",
     ]
     assert cbpe_summary.iloc[0][core.MODEL_VERSION_COLUMN] == 3
@@ -259,6 +262,7 @@ def test_drift_alert_summary_and_cbpe_summary_build_monitoring_tables() -> None:
 
 @pytest.mark.unit
 def test_base_summary_and_actual_metrics_compute_expected_values(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
     valid_analysis_df: pd.DataFrame,
 ) -> None:
@@ -266,7 +270,7 @@ def test_base_summary_and_actual_metrics_compute_expected_values(
         df=valid_reference_df.copy(),
         name="reference",
         source="batch",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         require_predictions=True,
         require_target=True,
         require_features=False,
@@ -275,7 +279,7 @@ def test_base_summary_and_actual_metrics_compute_expected_values(
         df=valid_analysis_df.copy(),
         name="analysis",
         source="batch",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         require_predictions=True,
         require_target=False,
         require_features=False,
@@ -284,7 +288,7 @@ def test_base_summary_and_actual_metrics_compute_expected_values(
     base = core._base_summary(
         reference=reference_prepared,
         analysis=analysis_prepared,
-        time_column=CHURN_USE_CASE.time_column,
+        time_column=binary_use_case.time_column,
     )
     assert base["prediction_count"].sum() == 5
     assert base["avg_predicted_probability"].notna().all()
@@ -293,14 +297,14 @@ def test_base_summary_and_actual_metrics_compute_expected_values(
     actual = core._actual_metrics(
         reference=reference_prepared,
         analysis=analysis_prepared,
-        target_column=CHURN_USE_CASE.target_column,
-        time_column=CHURN_USE_CASE.time_column,
+        target_column=binary_use_case.target_column,
+        time_column=binary_use_case.time_column,
     )
     assert actual.empty is False
     assert set(actual.columns) >= {
         core.PERIOD_COLUMN,
         core.MODEL_VERSION_COLUMN,
-        CHURN_USE_CASE.time_column,
+        binary_use_case.time_column,
         "observed_positive_rate",
         "realized_precision",
         "realized_recall",
@@ -310,6 +314,7 @@ def test_base_summary_and_actual_metrics_compute_expected_values(
 
 @pytest.mark.unit
 def test_calculate_version_drift_uses_nannyml_and_merges_alerts(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
     valid_analysis_df: pd.DataFrame,
     monkeypatch: pytest.MonkeyPatch,
@@ -324,7 +329,7 @@ def test_calculate_version_drift_uses_nannyml_and_merges_alerts(
         df=valid_reference_df.copy(),
         name="reference",
         source="batch",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         require_predictions=True,
         require_target=True,
         require_features=True,
@@ -333,7 +338,7 @@ def test_calculate_version_drift_uses_nannyml_and_merges_alerts(
         df=valid_analysis_df.copy(),
         name="analysis",
         source="batch",
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         require_predictions=True,
         require_target=False,
         require_features=True,
@@ -342,9 +347,9 @@ def test_calculate_version_drift_uses_nannyml_and_merges_alerts(
         {
             core.PERIOD_COLUMN: ["analysis"],
             core.MODEL_VERSION_COLUMN: [1],
-            CHURN_USE_CASE.time_column: pd.to_datetime(["2026-02-03"]),
+            binary_use_case.time_column: pd.to_datetime(["2026-02-03"]),
             "latency_ms": [12.0],
-            **{column: [0] for column in CHURN_USE_CASE.feature_columns},
+            **{column: [0] for column in binary_use_case.feature_columns},
         }
     )
 
@@ -353,13 +358,13 @@ def test_calculate_version_drift_uses_nannyml_and_merges_alerts(
         analysis=analysis_prepared,
         errors=errors,
         model_version=1,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert list(result.columns) == [
         core.PERIOD_COLUMN,
         core.MODEL_VERSION_COLUMN,
-        CHURN_USE_CASE.time_column,
+        binary_use_case.time_column,
         "cbpe_roc_auc",
         "reconstruction_drift_alert_count",
         "univariate_drift_alert_count",
@@ -367,12 +372,14 @@ def test_calculate_version_drift_uses_nannyml_and_merges_alerts(
 
 
 @pytest.mark.unit
-def test_operational_summary_combines_success_and_error_events() -> None:
+def test_operational_summary_combines_success_and_error_events(
+    binary_use_case: UseCase,
+) -> None:
     analysis = pd.DataFrame(
         {
             core.PERIOD_COLUMN: ["api", "api"],
             core.MODEL_VERSION_COLUMN: [1, 1],
-            CHURN_USE_CASE.time_column: pd.to_datetime(["2026-02-01", "2026-02-02"]),
+            binary_use_case.time_column: pd.to_datetime(["2026-02-01", "2026-02-02"]),
             "latency_ms": [10.0, 30.0],
         }
     )
@@ -380,7 +387,7 @@ def test_operational_summary_combines_success_and_error_events() -> None:
         {
             core.PERIOD_COLUMN: ["api"],
             core.MODEL_VERSION_COLUMN: [1],
-            CHURN_USE_CASE.time_column: pd.to_datetime(["2026-02-01"]),
+            binary_use_case.time_column: pd.to_datetime(["2026-02-01"]),
             "latency_ms": [95.0],
         }
     )
@@ -388,7 +395,7 @@ def test_operational_summary_combines_success_and_error_events() -> None:
     summary = core._operational_summary(
         analysis=analysis,
         errors=errors,
-        time_column=CHURN_USE_CASE.time_column,
+        time_column=binary_use_case.time_column,
     )
 
     assert summary["api_request_count"].tolist() == [2, 1]
@@ -398,6 +405,7 @@ def test_operational_summary_combines_success_and_error_events() -> None:
 
 @pytest.mark.unit
 def test_build_monitoring_report_generates_summary_and_csv(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
     valid_analysis_df: pd.DataFrame,
     tmp_path: Path,
@@ -418,7 +426,7 @@ def test_build_monitoring_report_generates_summary_and_csv(
         report = core.build_monitoring_report(
             reference=valid_reference_df,
             analysis=valid_analysis_df,
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
             source_reference="batch",
             source_analysis="batch",
             drift=True,
@@ -427,19 +435,20 @@ def test_build_monitoring_report_generates_summary_and_csv(
 
     assert isinstance(report, core.MonitoringReport)
     assert not report.summary.empty
-    assert report.summary[CHURN_USE_CASE.time_column].dtype.kind == "M"
+    assert report.summary[binary_use_case.time_column].dtype.kind == "M"
     assert report.summary_path is not None
     assert report.summary_path.exists()
     assert list(report.summary.columns)[:4] == [
         "source",
         core.PERIOD_COLUMN,
         core.MODEL_VERSION_COLUMN,
-        CHURN_USE_CASE.time_column,
+        binary_use_case.time_column,
     ]
 
 
 @pytest.mark.unit
 def test_build_monitoring_report_can_select_an_exact_model_version(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
     valid_analysis_df: pd.DataFrame,
     monkeypatch: pytest.MonkeyPatch,
@@ -451,7 +460,7 @@ def test_build_monitoring_report_can_select_an_exact_model_version(
     report = core.build_monitoring_report(
         reference=pd.concat([valid_reference_df, reference_v2], ignore_index=True),
         analysis=pd.concat([valid_analysis_df, analysis_v2], ignore_index=True),
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         source_reference="batch",
         source_analysis="batch",
         drift=False,
@@ -467,15 +476,16 @@ def test_build_monitoring_report_can_select_an_exact_model_version(
     "ignore:The resulting number of chunks is too low.",
 )
 def test_undated_reference_has_one_baseline_and_monthly_drift(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
 ) -> None:
     use_case = replace(
-        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+        binary_use_case, time_column=None, split_strategy="stratified_random"
     )
     reference = pd.concat([valid_reference_df] * 100, ignore_index=True).drop(
         columns="reference_date"
     )
-    analysis = reference.iloc[:180].drop(columns="churn").copy()
+    analysis = reference.iloc[:180].drop(columns="label").copy()
     analysis["timestamp"] = pd.to_datetime(["2026-02-01"] * 90 + ["2026-03-01"] * 90)
     analysis["latency_ms"] = 10.0
     report = core.build_monitoring_report(
@@ -502,10 +512,12 @@ def test_undated_reference_has_one_baseline_and_monthly_drift(
 
 @pytest.mark.unit
 def test_undated_reference_rejects_mixed_dates_and_too_few_rows(
-    valid_reference_df: pd.DataFrame, valid_analysis_df: pd.DataFrame
+    binary_use_case: UseCase,
+    valid_reference_df: pd.DataFrame,
+    valid_analysis_df: pd.DataFrame,
 ) -> None:
     use_case = replace(
-        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+        binary_use_case, time_column=None, split_strategy="stratified_random"
     )
     reference = valid_reference_df.drop(columns="reference_date")
     analysis = valid_analysis_df.rename(columns={"reference_date": "timestamp"})
@@ -532,10 +544,12 @@ def test_undated_reference_rejects_mixed_dates_and_too_few_rows(
 
 @pytest.mark.unit
 def test_undated_reference_filters_model_versions(
-    valid_reference_df: pd.DataFrame, valid_analysis_df: pd.DataFrame
+    binary_use_case: UseCase,
+    valid_reference_df: pd.DataFrame,
+    valid_analysis_df: pd.DataFrame,
 ) -> None:
     use_case = replace(
-        CHURN_USE_CASE, time_column=None, split_strategy="stratified_random"
+        binary_use_case, time_column=None, split_strategy="stratified_random"
     )
     reference = valid_reference_df.drop(columns="reference_date")
     analysis = valid_analysis_df.rename(columns={"reference_date": "timestamp"})
@@ -569,6 +583,7 @@ def test_undated_chunker_creates_exactly_three_balanced_chunks() -> None:
     "ignore:The resulting number of chunks is too low.",
 )
 def test_run_monitoring_handles_batch_and_api_sources(
+    binary_use_case: UseCase,
     valid_reference_df: pd.DataFrame,
     valid_prediction_log_path: Path,
     valid_error_log_path: Path,
@@ -582,7 +597,7 @@ def test_run_monitoring_handles_batch_and_api_sources(
     batch_report = core.run_monitoring(
         reference_csv=reference_csv,
         analysis_csv=analysis_csv,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         output_dir=tmp_path,
     )
     assert isinstance(batch_report, core.MonitoringReport)
@@ -590,7 +605,7 @@ def test_run_monitoring_handles_batch_and_api_sources(
 
     api_report = core.run_monitoring(
         reference_csv=reference_csv,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         prediction_log=valid_prediction_log_path,
         error_log=valid_error_log_path,
         output_dir=tmp_path,
@@ -599,11 +614,12 @@ def test_run_monitoring_handles_batch_and_api_sources(
     assert api_report.summary.empty is False
 
     with pytest.raises(ValueError, match="exactly one"):
-        core.run_monitoring(reference_csv=reference_csv, use_case=CHURN_USE_CASE)
+        core.run_monitoring(reference_csv=reference_csv, use_case=binary_use_case)
 
 
 @pytest.mark.unit
 def test_log_monitoring_run_logs_tags_and_artifact(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -612,7 +628,7 @@ def test_log_monitoring_run_logs_tags_and_artifact(
         summary=pd.DataFrame(
             {
                 "model_version": [7, 7],
-                CHURN_USE_CASE.time_column: pd.to_datetime(
+                binary_use_case.time_column: pd.to_datetime(
                     ["2026-01-01", "2026-02-01"]
                 ),
             }

@@ -13,13 +13,14 @@ from mlkit.data import storage
 from mlkit.tracking.manifest import TrainingManifest
 from mlkit.tracking.registry import ModelRegistry
 from mlkit.training import TrainingResult
-from mlkit.use_cases import get_use_case
+from mlkit.use_cases import UseCase
 
-CHURN_USE_CASE = get_use_case("churn")
+pytestmark = pytest.mark.usefixtures("synthetic_use_case_registry")
 
 
 @pytest.mark.unit
 def test_batch_predict_cli_reads_csv_and_writes_predictions(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -53,7 +54,7 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
             "--index_col",
             "customer_id",
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
@@ -64,7 +65,7 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
     )
     predict.assert_called_once_with(
         df=input_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_name=None,
         model_version=None,
         manifest=None,
@@ -81,6 +82,7 @@ def test_batch_predict_cli_reads_csv_and_writes_predictions(
 
 @pytest.mark.unit
 def test_run_batch_prediction_validates_and_returns_prediction_dataframe(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     input_df = pd.DataFrame({"age": [45]})
@@ -97,12 +99,12 @@ def test_run_batch_prediction_validates_and_returns_prediction_dataframe(
 
     result = batch_predict.run_batch_prediction(
         df=input_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
-    validate_data.assert_called_once_with(df=input_df, use_case=CHURN_USE_CASE)
+    validate_data.assert_called_once_with(df=input_df, use_case=binary_use_case)
     load_model.assert_called_once_with(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         tracking_uri=None,
         model_name=None,
         model_alias=None,
@@ -116,6 +118,7 @@ def test_run_batch_prediction_validates_and_returns_prediction_dataframe(
 
 @pytest.mark.unit
 def test_run_batch_prediction_uses_exact_model_version(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
 
@@ -131,13 +134,13 @@ def test_run_batch_prediction_uses_exact_model_version(
 
     batch_predict.run_batch_prediction(
         df=pd.DataFrame({"age": [30]}),
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_name="churn-risk",
         model_version=8,
     )
 
     load_model.assert_called_once_with(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         tracking_uri=None,
         model_name="churn-risk",
         model_alias=None,
@@ -149,6 +152,7 @@ def test_run_batch_prediction_uses_exact_model_version(
 
 @pytest.mark.unit
 def test_run_batch_prediction_uses_manifest(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     training_manifest_factory: TrainingManifest,
 ) -> None:
@@ -168,12 +172,12 @@ def test_run_batch_prediction_uses_manifest(
 
     batch_predict.run_batch_prediction(
         df=pd.DataFrame({"age": [30]}),
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         manifest=manifest,
     )
 
     load_model.assert_called_once_with(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         tracking_uri=None,
         model_name=None,
         model_alias=None,
@@ -185,6 +189,7 @@ def test_run_batch_prediction_uses_manifest(
 
 @pytest.mark.unit
 def test_batch_predict_cli_reads_model_manifest(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     training_manifest_factory: TrainingManifest,
@@ -217,13 +222,13 @@ def test_batch_predict_cli_reads_model_manifest(
             "--model_manifest",
             str(tmp_path / "manifest.json"),
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
     predict.assert_called_once_with(
         df=input_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_name=None,
         model_version=None,
         manifest=manifest,
@@ -233,6 +238,7 @@ def test_batch_predict_cli_reads_model_manifest(
 
 @pytest.mark.unit
 def test_batch_predict_cli_reads_unregistered_model_manifest(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     training_manifest_factory: TrainingManifest,
@@ -269,13 +275,13 @@ def test_batch_predict_cli_reads_unregistered_model_manifest(
             "--model_manifest",
             str(tmp_path / "manifest.json"),
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
     predict.assert_called_once_with(
         df=input_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_name=None,
         model_version=None,
         manifest=manifest,
@@ -285,6 +291,7 @@ def test_batch_predict_cli_reads_unregistered_model_manifest(
 
 @pytest.mark.unit
 def test_batch_prediction_logs_and_reraises_on_failure(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -298,7 +305,7 @@ def test_batch_prediction_logs_and_reraises_on_failure(
     with pytest.raises(RuntimeError, match="boom"):
         batch_predict.run_batch_prediction(
             df=pd.DataFrame({"age": [45]}),
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
         )
 
     log_exception.assert_called_once()
@@ -306,6 +313,7 @@ def test_batch_prediction_logs_and_reraises_on_failure(
 
 @pytest.mark.unit
 def test_batch_predict_cli_reads_and_writes_partitioned_data(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     input_df = pd.DataFrame({"reference_date": pd.to_datetime(["2026-02-15"])})
@@ -338,7 +346,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
             "--end_date",
             "2026-02-28",
             "--use_case",
-            "churn",
+            "binary_uc",
         ]
     )
 
@@ -351,7 +359,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
     )
     predict.assert_called_once_with(
         df=input_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         model_name=None,
         model_version=None,
         manifest=None,
@@ -368,6 +376,7 @@ def test_batch_predict_cli_reads_and_writes_partitioned_data(
 
 @pytest.mark.unit
 def test_batch_predict_cli_scores_timestamp_free_parquet_with_manifest(
+    random_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     training_manifest_factory: TrainingManifest,
@@ -389,27 +398,27 @@ def test_batch_predict_cli_scores_timestamp_free_parquet_with_manifest(
         [
             "batch-predict",
             "--use_case",
-            "phishing",
+            "random_uc",
             "--input_dataset",
             "input.parquet",
             "--output_dataset",
-            "predictions/phishing_lr_split",
+            "predictions/random_uc_lr_split",
             "--model_manifest",
             "manifests/model.json",
         ]
     )
 
-    assert predict.call_args.kwargs["use_case"] == get_use_case("phishing")
+    assert predict.call_args.kwargs["use_case"] == random_use_case
     assert predict.call_args.kwargs["manifest"] is manifest
     pd.testing.assert_frame_equal(predict.call_args.kwargs["df"], source)
     pd.testing.assert_frame_equal(
-        pd.read_parquet(tmp_path / "predictions/phishing_lr_split"),
+        pd.read_parquet(tmp_path / "predictions/random_uc_lr_split"),
         source.assign(predicted_probability=[0.1, 0.9]),
     )
 
 
 @pytest.mark.unit
-def test_batch_predict_cli_phishing_timestamp_override(
+def test_batch_predict_cli_timestamp_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -426,7 +435,7 @@ def test_batch_predict_cli_phishing_timestamp_override(
         [
             "batch-predict",
             "--use_case",
-            "phishing",
+            "random_uc",
             "--input_dataset",
             "input.parquet",
             "--output_dataset",
@@ -452,7 +461,7 @@ def test_batch_predict_cli_rejects_timestamp_free_date_bounds(
             [
                 "batch-predict",
                 "--use_case",
-                "phishing",
+                "random_uc",
                 "--input_dataset",
                 "input.parquet",
                 "--model_manifest",
@@ -513,7 +522,7 @@ def test_batch_predict_cli_rejects_invalid_arguments(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        mlkit.main(["batch-predict", "--use_case", "churn", *arguments])
+        mlkit.main(["batch-predict", "--use_case", "binary_uc", *arguments])
 
     assert exc_info.value.code == 2
     assert error_message in capsys.readouterr().err
@@ -521,6 +530,7 @@ def test_batch_predict_cli_rejects_invalid_arguments(
 
 @pytest.mark.integration
 def test_batch_prediction_uses_registered_model(
+    binary_use_case: UseCase,
     generated_inference_csv: Path,
     registered_model: dict[str, object],
 ) -> None:
@@ -540,7 +550,7 @@ def test_batch_prediction_uses_registered_model(
 
     predictions = batch_predict.run_batch_prediction(
         df=input_df,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         tracking_uri=str(registered_model["tracking_uri"]),
         model_name=str(registered_model["model_name"]),
         model_alias=str(registered_model["model_alias"]),

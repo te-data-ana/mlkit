@@ -18,9 +18,9 @@ from mlkit.serving.serve_samples import (
     custom_parser,
     main,
 )
-from mlkit.use_cases import get_use_case
+from mlkit.use_cases import UseCase
 
-CHURN_USE_CASE = get_use_case("churn")
+pytestmark = pytest.mark.usefixtures("synthetic_use_case_registry")
 
 
 class MockResponse:
@@ -36,11 +36,12 @@ class MockResponse:
 
 @pytest.mark.unit
 def test_load_sample_data_is_reproducible(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     generated_training_df: pd.DataFrame,
 ) -> None:
     load_raw_data_mock = Mock(
-        return_value=generated_training_df.drop(columns=["Churn"])
+        return_value=generated_training_df.drop(columns=["label"])
     )
     monkeypatch.setattr(serve_samples, "load_raw_data", load_raw_data_mock)
 
@@ -53,7 +54,7 @@ def test_load_sample_data_is_reproducible(
     settings = RuntimeSettings()
 
     result_1 = serve_samples.load_sample_data(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         settings=settings,
         input_csv="custom.csv",
         sample_size=5,
@@ -61,7 +62,7 @@ def test_load_sample_data_is_reproducible(
     )
 
     result_2 = serve_samples.load_sample_data(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         settings=settings,
         input_csv="custom.csv",
         sample_size=5,
@@ -72,7 +73,7 @@ def test_load_sample_data_is_reproducible(
     pd.testing.assert_frame_equal(result_1, result_2)
     load_raw_data_mock.assert_called_with(
         file_name="custom.csv",
-        index_col=CHURN_USE_CASE.index_column,
+        index_col=binary_use_case.index_column,
         data_dir=settings.data_dir / "raw",
         drop_columns=None,
     )
@@ -80,9 +81,9 @@ def test_load_sample_data_is_reproducible(
 
 @pytest.mark.unit
 def test_load_sample_data_from_parquet(
-    tmp_path: Path, generated_training_df: pd.DataFrame
+    binary_use_case: UseCase, tmp_path: Path, generated_training_df: pd.DataFrame
 ) -> None:
-    use_case = replace(CHURN_USE_CASE, index_column=None)
+    use_case = replace(binary_use_case, index_column=None)
     source = generated_training_df.reset_index(drop=True)
     source.to_parquet(tmp_path / "input.parquet", index=False)
     settings = ServingSettings(data_dir=tmp_path)
@@ -93,19 +94,21 @@ def test_load_sample_data_from_parquet(
         "input_parquet": "input.parquet",
         "sample_size": 5,
         "random_state": 42,
-        "drop_columns": ["Churn"],
+        "drop_columns": ["label"],
     }
     sample = serve_samples.load_sample_data(**kwargs)
     pd.testing.assert_frame_equal(sample, serve_samples.load_sample_data(**kwargs))
     assert len(sample) == 5
-    assert "churn" not in sample and "age" in sample
+    assert "label" not in sample and "age" in sample
     with pytest.raises(ValueError, match="larger sample"):
         serve_samples.load_sample_data(**{**kwargs, "sample_size": len(source) + 1})
 
 
 @pytest.mark.unit
-def test_load_sample_data_rejects_empty_or_missing_parquet(tmp_path: Path) -> None:
-    use_case = replace(CHURN_USE_CASE, index_column=None)
+def test_load_sample_data_rejects_empty_or_missing_parquet(
+    binary_use_case: UseCase, tmp_path: Path
+) -> None:
+    use_case = replace(binary_use_case, index_column=None)
     settings = ServingSettings(data_dir=tmp_path)
     source = pd.DataFrame(columns=use_case.feature_columns)
     source.to_parquet(tmp_path / "empty.parquet", index=False)
@@ -129,6 +132,7 @@ def test_load_sample_data_rejects_empty_or_missing_parquet(tmp_path: Path) -> No
 
 @pytest.mark.unit
 def test_predict_samples_combines_predictions(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     df = pd.DataFrame(
@@ -154,7 +158,7 @@ def test_predict_samples_combines_predictions(
     result = serve_samples.predict_samples(
         df=df,
         settings=settings,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert "predicted_class" in result.columns
@@ -165,6 +169,7 @@ def test_predict_samples_combines_predictions(
 
 @pytest.mark.unit
 def test_predict_samples_sends_missing_features_as_json_null(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     frame = pd.DataFrame({"gender": ["Female", None], "age": [42, 52]})
@@ -178,7 +183,7 @@ def test_predict_samples_sends_missing_features_as_json_null(
 
     monkeypatch.setattr(serve_samples.requests, "post", post)
     serve_samples.predict_samples(
-        df=frame, settings=RuntimeSettings(), use_case=CHURN_USE_CASE
+        df=frame, settings=RuntimeSettings(), use_case=binary_use_case
     )
     assert b'"gender": null' in bodies[1]
     pd.testing.assert_frame_equal(frame, original)
@@ -186,6 +191,7 @@ def test_predict_samples_sends_missing_features_as_json_null(
 
 @pytest.mark.unit
 def test_predict_samples_raises_http_error(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class ErrorResponse:
@@ -204,12 +210,13 @@ def test_predict_samples_raises_http_error(
         serve_samples.predict_samples(
             df=df,
             settings=RuntimeSettings(),
-            use_case=CHURN_USE_CASE,
+            use_case=binary_use_case,
         )
 
 
 @pytest.mark.unit
 def test_predict_samples_sends_use_case_timestamp_as_generic_query_parameter(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_params = []
@@ -235,7 +242,7 @@ def test_predict_samples_sends_use_case_timestamp_as_generic_query_parameter(
     serve_samples.predict_samples(
         df=df,
         settings=RuntimeSettings(),
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
     )
 
     assert "timestamp" in captured_params[0]
@@ -243,9 +250,10 @@ def test_predict_samples_sends_use_case_timestamp_as_generic_query_parameter(
 
 @pytest.mark.unit
 def test_predict_samples_supports_alternate_use_case_time_column(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    use_case = replace(CHURN_USE_CASE, time_column="event_date")
+    use_case = replace(binary_use_case, time_column="event_date")
     captured_params = []
 
     def mock_post(*args, **kwargs):
@@ -300,16 +308,19 @@ def test_save_predictions_writes_csv(
 
 
 @pytest.mark.unit
-def test_sample_client_rejects_ephemeral_port() -> None:
+def test_sample_client_rejects_ephemeral_port(
+    binary_use_case: UseCase,
+) -> None:
     settings = ServingSettings(api_port=0)
     with pytest.raises(ValueError, match="nonzero"):
         serve_samples.predict_samples(
-            use_case=CHURN_USE_CASE, df=pd.DataFrame(), settings=settings
+            use_case=binary_use_case, df=pd.DataFrame(), settings=settings
         )
 
 
 @pytest.mark.unit
 def test_serve_samples_calls_dependencies(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -334,7 +345,7 @@ def test_serve_samples_calls_dependencies(
     monkeypatch.setattr(serve_samples, "save_predictions", save_predictions_mock)
 
     result = serve_samples.serve_samples(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         input_csv="inference.csv",
         input_parquet=None,
         sample_size=1,
@@ -345,7 +356,7 @@ def test_serve_samples_calls_dependencies(
 
     assert result == expected
     load_sample_data_mock.assert_called_once_with(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         settings=settings,
         input_csv="inference.csv",
         input_parquet=None,
@@ -356,7 +367,7 @@ def test_serve_samples_calls_dependencies(
     predict_samples_mock.assert_called_once_with(
         df=sample_df,
         settings=settings,
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         timestamp=None,
     )
     save_predictions_mock.assert_called_once_with(
@@ -545,6 +556,7 @@ def test_configure_model_environment_from_model_name_version(
     ("random_state", "override", "expected"), [(0, None, 0), (42, 7, 7)]
 )
 def test_main_starts_api_serves_samples_and_stops_server(
+    binary_use_case: UseCase,
     monkeypatch: pytest.MonkeyPatch,
     random_state: int,
     override: int | None,
@@ -558,7 +570,7 @@ def test_main_starts_api_serves_samples_and_stops_server(
     mock_process = Mock()
 
     args = Namespace(
-        use_case="churn",
+        use_case="binary_uc",
         input_csv="inference.csv",
         input_parquet=None,
         sample_size=100,
@@ -630,7 +642,7 @@ def test_main_starts_api_serves_samples_and_stops_server(
     )
 
     serve_samples_mock.assert_called_once_with(
-        use_case=CHURN_USE_CASE,
+        use_case=binary_use_case,
         input_csv="inference.csv",
         sample_size=100,
         random_state=expected,
@@ -654,7 +666,7 @@ def test_main_uses_cli_connection_overrides_for_server_and_client(
         [
             "serve_samples",
             "--use_case",
-            "churn",
+            "binary_uc",
             "--input_csv",
             "input.csv",
             "--host",
@@ -687,7 +699,7 @@ def test_main_stops_server_when_serving_fails(
     mock_process = Mock()
 
     args = Namespace(
-        use_case="churn",
+        use_case="binary_uc",
         input_csv="inference.csv",
         input_parquet=None,
         sample_size=100,
@@ -752,7 +764,7 @@ def test_main_rejects_manifest_and_model_version(
     parser = Mock()
 
     parser.parse_args.return_value = Namespace(
-        use_case="churn",
+        use_case="binary_uc",
         input_csv="inference.csv",
         sample_size=100,
         random_state=42,

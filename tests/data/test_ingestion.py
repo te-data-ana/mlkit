@@ -29,7 +29,7 @@ def test_load_raw_data_drops_normalized_columns(tmp_path: Path) -> None:
         {
             "Customer ID": [1, 2],
             "Extra Value": [10, 20],
-            "Churn": [0, 1],
+            "label": [0, 1],
         }
     ).to_csv(source, index=False)
 
@@ -39,7 +39,7 @@ def test_load_raw_data_drops_normalized_columns(tmp_path: Path) -> None:
         drop_columns=[" Extra Value "],
     )
 
-    assert df.columns.tolist() == ["customer_id", "churn"]
+    assert df.columns.tolist() == ["customer_id", "label"]
 
 
 @pytest.mark.unit
